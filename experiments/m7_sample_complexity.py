@@ -1,22 +1,21 @@
-"""M7: sample-complexity learning curves.
+"""M7: accuracy vs training-set size -- the sample-complexity experiment.
 
-Central question: how many training samples k are needed to reach a target
-accuracy (exact forward KL <= eps) on the full distribution, and how does that
-scale with system size n?
+Headline question: how does accuracy on the full distribution improve with the
+number of training samples k, for distributions of decreasing structure?
 
-  chemistry (Hubbard, structured)   -- predict k_eps ~ poly(n)
-  RCS (Porter-Thomas, chaotic)      -- predict k_eps ~ exp(n)
+  Neel Hubbard (U/t=8)   -- strong-coupling, Neel-ordered, most structured
+  regular Hubbard (U/t=4) -- intermediate coupling
+  RCS (Porter-Thomas)     -- chaotic, least structured
 
-For each (family, n): a capacity-floor KL (train the architecture against exact
-p) and a k-sweep of sample-limited KLs (averaged over seeds). Exact KL over the
-full support; no test-set Monte Carlo.
+Accuracy = 1 - TV(p, q_theta) = sum_x min(p, q) in [0, 1] (distribution
+overlap), computed EXACTLY over the full support (no test-set Monte Carlo).
+We also record the forward KL and the capacity-ceiling (best accuracy at
+infinite data via soft-target training) so the curves are confound-controlled.
 
-Both families get the exact symmetries of their problem quotiented out:
-  - Hubbard: (N_up, N_dn) sector mask (particle number) -> KL over the sector.
-  - RCS: none -> KL over all 2^n.
-so we measure the *residual* learnability, consistent with the M0.5 philosophy.
+Both families get their exact symmetries quotiented out (Hubbard: (N_up, N_dn)
+sector mask; RCS: none), so we measure residual learnability.
 
-Resumable: every config is checkpointed to results/m7_results.json.
+Resumable: every config checkpointed to results/m7_results.json.
 """
 
 import json
@@ -36,6 +35,7 @@ from aics.eval.sample_complexity import (
     model_log_probs_hubbard,
     model_log_probs_rcs,
     shannon_entropy,
+    total_variation,
     train_softtarget,
 )
 from aics.models.ar_transformer import (
@@ -48,9 +48,9 @@ from aics.models.ar_transformer import (
 torch.set_num_threads(4)
 
 # ---- config ----------------------------------------------------------------
-HUBBARD_LS = [4, 6, 8]          # n = 8, 12, 16
-HUBBARD_U = 4.0
-RCS_NS = [8, 10, 12]
+HUBBARD_VARIANTS = [("neel", 8.0), ("regular", 4.0)]   # label, U/t
+HUBBARD_LS = [6]                # matched n = 12 only (headline is fixed-n)
+RCS_NS = [12]
 RCS_DEPTH = 12
 K_VALUES = [10, 30, 100, 300, 1000]
 N_SEEDS = 2
@@ -59,7 +59,7 @@ FLOOR_EPOCHS = 200
 D_MODEL = 64
 N_LAYERS = 2
 N_HEADS = 4
-KL_TARGETS = [2.0, 1.0, 0.5]    # for k_eps extraction
+N_MATCH = 12                    # matched system size for the headline panel
 # ----------------------------------------------------------------------------
 
 RESULTS_PATH = Path(__file__).resolve().parents[1] / "results" / "m7_results.json"
@@ -85,224 +85,204 @@ def rcs_p(n):
     return p / p.sum()
 
 
-def hubbard_p(L):
-    setup = hubbard_gs_setup(L, 1.0, HUBBARD_U, pbc=True)
+def hubbard_p(L, U):
+    setup = hubbard_gs_setup(L, 1.0, U, pbc=True)
     p = np.abs(setup["psi_0"]) ** 2
     p = p / p.sum()
-    states = sector_states(L, L // 2, L // 2)
-    return p, states
+    return p, sector_states(L, L // 2, L // 2)
 
 
-# ---- train + exact-KL eval -------------------------------------------------
+# ---- train + exact metrics -------------------------------------------------
+
+def _metrics(p, log_q):
+    kl, qm = forward_kl(p, log_q)
+    return dict(kl=kl, tv=total_variation(p, log_q), q_mass=qm)
+
 
 def eval_rcs(n, p, k, seed):
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
-    samples = rng.choice(len(p), size=k, p=p)
-    X = int_to_bits(samples, n)
+    X = int_to_bits(rng.choice(len(p), size=k, p=p), n)
     model = ARTransformer(n, d_model=D_MODEL, n_layers=N_LAYERS, n_heads=N_HEADS)
     train_ar(model, X, n_epochs=EPOCHS, lr=2e-3, batch_size=32)
-    return forward_kl(p, model_log_probs_rcs(model, n))
+    return _metrics(p, model_log_probs_rcs(model, n))
 
 
 def floor_rcs(n, p):
     torch.manual_seed(0)
     model = ARTransformer(n, d_model=D_MODEL, n_layers=N_LAYERS, n_heads=N_HEADS)
-    all_bits = int_to_bits(np.arange(len(p)), n)
-    train_softtarget(model, all_bits, p, c_value=None, n_epochs=FLOOR_EPOCHS)
-    return forward_kl(p, model_log_probs_rcs(model, n))
+    train_softtarget(model, int_to_bits(np.arange(len(p)), n), p,
+                     c_value=None, n_epochs=FLOOR_EPOCHS)
+    return _metrics(p, model_log_probs_rcs(model, n))
 
 
-def eval_hubbard(L, p, states, k, seed):
+def eval_hubbard(L, U, p, states, k, seed):
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
-    idx = rng.choice(len(p), size=k, p=p)
-    X = state_int_to_bits(states[idx], L)
-    c = np.full(k, HUBBARD_U, dtype=np.float32)
+    X = state_int_to_bits(states[rng.choice(len(p), size=k, p=p)], L)
+    c = np.full(k, U, dtype=np.float32)
     model = ARTransformerConditional(L, L // 2, L // 2, d_model=D_MODEL,
                                      n_layers=N_LAYERS, n_heads=N_HEADS)
     train_ar_conditional(model, X, c, n_epochs=EPOCHS, lr=2e-3, batch_size=32)
-    return forward_kl(p, model_log_probs_hubbard(model, states, L, HUBBARD_U))
+    return _metrics(p, model_log_probs_hubbard(model, states, L, U))
 
 
-def floor_hubbard(L, p, states):
+def floor_hubbard(L, U, p, states):
     torch.manual_seed(0)
     model = ARTransformerConditional(L, L // 2, L // 2, d_model=D_MODEL,
                                      n_layers=N_LAYERS, n_heads=N_HEADS)
-    all_bits = state_int_to_bits(states, L)
-    train_softtarget(model, all_bits, p, c_value=HUBBARD_U, n_epochs=FLOOR_EPOCHS)
-    return forward_kl(p, model_log_probs_hubbard(model, states, L, HUBBARD_U))
+    train_softtarget(model, state_int_to_bits(states, L), p,
+                     c_value=U, n_epochs=FLOOR_EPOCHS)
+    return _metrics(p, model_log_probs_hubbard(model, states, L, U))
 
 
-# ---- main sweep ------------------------------------------------------------
+def _done(res, key):
+    return key in res and "tv" in res[key]
+
 
 def run_sweep():
     res = load_results()
 
-    for L in HUBBARD_LS:
-        n = 2 * L
-        p, states = hubbard_p(L)
-        H_p = shannon_entropy(p)
-        print(f"\n[hubbard L={L} n={n}] support={len(p)} H={H_p:.3f} "
-              f"log|supp|={np.log(len(p)):.3f}", flush=True)
-        fkey = f"hubbard_L{L}_floor"
-        if fkey not in res:
-            kl, qm = floor_hubbard(L, p, states)
-            res[fkey] = dict(kl=kl, q_mass=qm, H=H_p, n=n, support=len(p))
-            save_results(res)
-            print(f"  floor: KL={kl:.4f} (qmass={qm:.3f})", flush=True)
-        for k in K_VALUES:
-            for s in range(N_SEEDS):
-                key = f"hubbard_L{L}_k{k}_s{s}"
-                if key in res:
-                    continue
-                kl, qm = eval_hubbard(L, p, states, k, s)
-                res[key] = dict(kl=kl, q_mass=qm, n=n, k=k, seed=s,
-                                support=len(p), H=H_p)
+    for label, U in HUBBARD_VARIANTS:
+        for L in HUBBARD_LS:
+            n = 2 * L
+            p, states = hubbard_p(L, U)
+            H_p = shannon_entropy(p)
+            tag = f"hubbard_{label}_L{L}"
+            print(f"\n[{tag} n={n} U/t={U}] support={len(p)} H={H_p:.3f}", flush=True)
+            fkey = f"{tag}_floor"
+            if not _done(res, fkey):
+                m = floor_hubbard(L, U, p, states)
+                res[fkey] = {**m, "H": H_p, "n": n, "support": len(p), "U": U}
                 save_results(res)
-                print(f"  k={k:>4} s={s}: KL={kl:.4f} (qmass={qm:.3f})", flush=True)
+                print(f"  floor: acc={1-m['tv']:.4f} KL={m['kl']:.4f} "
+                      f"(qmass={m['q_mass']:.3f})", flush=True)
+            for k in K_VALUES:
+                for s in range(N_SEEDS):
+                    key = f"{tag}_k{k}_s{s}"
+                    if _done(res, key):
+                        continue
+                    m = eval_hubbard(L, U, p, states, k, s)
+                    res[key] = {**m, "n": n, "k": k, "seed": s,
+                                "support": len(p), "H": H_p, "U": U}
+                    save_results(res)
+                    print(f"  k={k:>4} s={s}: acc={1-m['tv']:.4f} "
+                          f"KL={m['kl']:.4f}", flush=True)
 
     for n in RCS_NS:
         p = rcs_p(n)
         H_p = shannon_entropy(p)
-        print(f"\n[rcs n={n}] support={len(p)} H={H_p:.3f} "
-              f"log|supp|={np.log(len(p)):.3f}", flush=True)
-        fkey = f"rcs_n{n}_floor"
-        if fkey not in res:
-            kl, qm = floor_rcs(n, p)
-            res[fkey] = dict(kl=kl, q_mass=qm, H=H_p, n=n, support=len(p))
+        tag = f"rcs_n{n}"
+        print(f"\n[{tag}] support={len(p)} H={H_p:.3f}", flush=True)
+        fkey = f"{tag}_floor"
+        if not _done(res, fkey):
+            m = floor_rcs(n, p)
+            res[fkey] = {**m, "H": H_p, "n": n, "support": len(p)}
             save_results(res)
-            print(f"  floor: KL={kl:.4f} (qmass={qm:.3f})", flush=True)
+            print(f"  floor: acc={1-m['tv']:.4f} KL={m['kl']:.4f}", flush=True)
         for k in K_VALUES:
             for s in range(N_SEEDS):
-                key = f"rcs_n{n}_k{k}_s{s}"
-                if key in res:
+                key = f"{tag}_k{k}_s{s}"
+                if _done(res, key):
                     continue
-                kl, qm = eval_rcs(n, p, k, s)
-                res[key] = dict(kl=kl, q_mass=qm, n=n, k=k, seed=s,
-                                support=len(p), H=H_p)
+                m = eval_rcs(n, p, k, s)
+                res[key] = {**m, "n": n, "k": k, "seed": s,
+                            "support": len(p), "H": H_p}
                 save_results(res)
-                print(f"  k={k:>4} s={s}: KL={kl:.4f} (qmass={qm:.3f})", flush=True)
+                print(f"  k={k:>4} s={s}: acc={1-m['tv']:.4f} KL={m['kl']:.4f}",
+                      flush=True)
 
     return res
 
 
-# ---- aggregation + plots ---------------------------------------------------
+# ---- plots -----------------------------------------------------------------
 
-def curve(res, family, size):
-    prefix = f"{family}_L{size}" if family == "hubbard" else f"{family}_n{size}"
-    ks, kl_mean, kl_std = [], [], []
+def _series(res, prefix, metric):
+    ks, mean, std = [], [], []
     for k in K_VALUES:
-        vals = [res[f"{prefix}_k{k}_s{s}"]["kl"] for s in range(N_SEEDS)
-                if f"{prefix}_k{k}_s{s}" in res]
+        vals = [res[f"{prefix}_k{k}_s{s}"][metric]
+                for s in range(N_SEEDS) if f"{prefix}_k{k}_s{s}" in res]
         if vals:
-            ks.append(k)
-            kl_mean.append(float(np.mean(vals)))
-            kl_std.append(float(np.std(vals)))
-    floor = res.get(f"{prefix}_floor", {}).get("kl", float("nan"))
-    n = 2 * size if family == "hubbard" else size
-    return np.array(ks), np.array(kl_mean), np.array(kl_std), floor, n
+            ks.append(k); mean.append(float(np.mean(vals))); std.append(float(np.std(vals)))
+    floor = res.get(f"{prefix}_floor", {}).get(metric)
+    return np.array(ks), np.array(mean), np.array(std), floor
 
 
-def k_eps(ks, kl_mean, target):
-    """Smallest k with mean KL <= target (linear interp in log k). None if never."""
-    below = np.where(kl_mean <= target)[0]
-    if below.size == 0:
-        return None
-    j = below[0]
-    if j == 0:
-        return float(ks[0])
-    k1, k2 = ks[j - 1], ks[j]
-    y1, y2 = kl_mean[j - 1], kl_mean[j]
-    if y1 == y2:
-        return float(k2)
-    t = (y1 - target) / (y1 - y2)
-    return float(np.exp(np.log(k1) + t * (np.log(k2) - np.log(k1))))
+HEADLINE_SERIES = [
+    ("hubbard_neel", "Néel Hubbard (U/t=8)", "#2a9d8f", "o-"),
+    ("hubbard_regular", "regular Hubbard (U/t=4)", "#457b9d", "s-"),
+    ("rcs", "RCS (Porter-Thomas)", "#e76f51", "D-"),
+]
 
 
-def make_plots(res):
-    out_dir = RESULTS_PATH.parent
-    fig, axs = plt.subplots(1, 3, figsize=(16, 4.6))
-
-    # Panel A: Hubbard learning curves
-    ax = axs[0]
-    cmap = plt.get_cmap("viridis")
-    for i, L in enumerate(HUBBARD_LS):
-        ks, m, sd, fl, n = curve(res, "hubbard", L)
+def make_accuracy_plot(res):
+    L_match = N_MATCH // 2
+    fig, ax = plt.subplots(figsize=(7.8, 5.2))
+    for fam, label, color, fmt in HEADLINE_SERIES:
+        prefix = f"{fam}_L{L_match}" if fam.startswith("hubbard") else f"{fam}_n{N_MATCH}"
+        ks, tv_m, tv_s, tv_floor = _series(res, prefix, "tv")
         if ks.size == 0:
             continue
-        c = cmap(i / max(1, len(HUBBARD_LS) - 1))
-        ax.errorbar(ks, m, yerr=sd, fmt="o-", color=c, capsize=2,
-                    label=f"L={L} (n={n})")
-        if np.isfinite(fl):
-            ax.axhline(fl, color=c, ls=":", alpha=0.6)
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("training samples $k$")
-    ax.set_ylabel(r"$D_{\rm KL}(p\,\|\,q_\theta)$  [nats]")
-    ax.set_title("Hubbard (structured)\ndotted = capacity floor")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-
-    # Panel B: RCS learning curves
-    ax = axs[1]
-    cmap = plt.get_cmap("plasma")
-    for i, n in enumerate(RCS_NS):
-        ks, m, sd, fl, _ = curve(res, "rcs", n)
-        if ks.size == 0:
-            continue
-        c = cmap(i / max(1, len(RCS_NS) - 1))
-        ax.errorbar(ks, m, yerr=sd, fmt="s-", color=c, capsize=2, label=f"n={n}")
-        if np.isfinite(fl):
-            ax.axhline(fl, color=c, ls=":", alpha=0.6)
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("training samples $k$")
-    ax.set_title("RCS (Porter-Thomas)\ndotted = capacity floor")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-
-    # Panel C: k_eps(n) scaling
-    ax = axs[2]
-    target = KL_TARGETS[1]  # 1.0 nat
-    for family, sizes, marker, color in (("hubbard", HUBBARD_LS, "o-", "#2a9d8f"),
-                                         ("rcs", RCS_NS, "s-", "#e76f51")):
-        ns, keps = [], []
-        for size in sizes:
-            ks, m, sd, fl, n = curve(res, family, size)
-            if ks.size == 0:
-                continue
-            ke = k_eps(ks, m, target)
-            ns.append(n)
-            keps.append(ke if ke is not None else np.nan)
-        ax.plot(ns, keps, marker, color=color,
-                label=f"{family}", markersize=6)
-    ax.set_yscale("log")
-    ax.set_xlabel("system size $n$")
-    ax.set_ylabel(rf"$k_\epsilon$ to reach $D_{{\rm KL}}\leq{target}$ nats")
-    ax.set_title("sample complexity vs n\n(NaN = target not reached at max k)")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-
-    fig.suptitle("M7: exact-KL sample complexity -- chemistry vs RCS", y=1.02)
+        ax.errorbar(ks, 1 - tv_m, yerr=tv_s, fmt=fmt, color=color, label=label,
+                    capsize=3, markersize=6, linewidth=1.9)
+        if tv_floor is not None:
+            ax.axhline(1 - tv_floor, color=color, ls=":", alpha=0.55)
+    ax.set_xscale("log")
+    ax.set_ylim(0, 1.03)
+    ax.set_xlabel("training samples  $k$")
+    ax.set_ylabel(r"accuracy $=\,1-\mathrm{TV}(p,\,q_\theta)$   (distribution overlap)")
+    ax.set_title(f"Accuracy vs training samples (exact, matched $n={N_MATCH}$)\n"
+                 f"dotted = capacity ceiling (best achievable at infinite data)")
+    ax.legend(fontsize=9, loc="lower right")
+    ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
-    out = out_dir / "m7_sample_complexity.png"
+    out = RESULTS_PATH.parent / "m7_accuracy_vs_samples.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"\nWrote {out}", flush=True)
 
 
+def make_kl_plot(res):
+    """Supplementary: same three series, forward KL (log) vs k at matched n."""
+    L_match = N_MATCH // 2
+    fig, ax = plt.subplots(figsize=(7.8, 5.2))
+    for fam, label, color, fmt in HEADLINE_SERIES:
+        prefix = f"{fam}_L{L_match}" if fam.startswith("hubbard") else f"{fam}_n{N_MATCH}"
+        ks, kl_m, kl_s, kl_floor = _series(res, prefix, "kl")
+        if ks.size == 0:
+            continue
+        ax.errorbar(ks, kl_m, yerr=kl_s, fmt=fmt, color=color, label=label,
+                    capsize=3, markersize=6, linewidth=1.9)
+        if kl_floor is not None:
+            ax.axhline(kl_floor, color=color, ls=":", alpha=0.55)
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("training samples  $k$")
+    ax.set_ylabel(r"$D_{\rm KL}(p\,\|\,q_\theta)$  [nats]")
+    ax.set_title(f"Forward KL vs training samples (exact, matched $n={N_MATCH}$)")
+    ax.legend(fontsize=9, loc="upper right")
+    ax.grid(alpha=0.3, which="both")
+    fig.tight_layout()
+    out = RESULTS_PATH.parent / "m7_kl_vs_samples.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    print(f"Wrote {out}", flush=True)
+
+
 def print_table(res):
-    print("\n=== summary (mean KL over seeds) ===", flush=True)
-    print(f"  {'family':>8} {'n':>3} {'support':>8} {'floor':>7} "
-          + " ".join(f"k={k}" for k in K_VALUES), flush=True)
-    for family, sizes in (("hubbard", HUBBARD_LS), ("rcs", RCS_NS)):
-        for size in sizes:
-            ks, m, sd, fl, n = curve(res, family, size)
-            prefix = f"{family}_L{size}" if family == "hubbard" else f"{family}_n{size}"
-            supp = res.get(f"{prefix}_floor", {}).get("support", "?")
-            mdict = {int(kk): mm for kk, mm in zip(ks, m)}
-            row = "  ".join(f"{mdict.get(k, float('nan')):6.3f}" for k in K_VALUES)
-            print(f"  {family:>8} {n:>3} {str(supp):>8} {fl:>7.3f}  {row}", flush=True)
+    print(f"\n=== accuracy (1 - TV), mean over seeds, matched n={N_MATCH} ===", flush=True)
+    L_match = N_MATCH // 2
+    print(f"  {'series':>26} {'ceil':>6} " + " ".join(f"k={k}" for k in K_VALUES), flush=True)
+    for fam, label, _, _ in HEADLINE_SERIES:
+        prefix = f"{fam}_L{L_match}" if fam.startswith("hubbard") else f"{fam}_n{N_MATCH}"
+        ks, tv_m, tv_s, tv_floor = _series(res, prefix, "tv")
+        accs = {int(k): 1 - t for k, t in zip(ks, tv_m)}
+        row = "  ".join(f"{accs.get(k, float('nan')):5.3f}" for k in K_VALUES)
+        ceil = (1 - tv_floor) if tv_floor is not None else float("nan")
+        print(f"  {label:>26} {ceil:6.3f}  {row}", flush=True)
 
 
 def main():
     res = run_sweep()
-    make_plots(res)
+    make_accuracy_plot(res)
+    make_kl_plot(res)
     print_table(res)
 
 

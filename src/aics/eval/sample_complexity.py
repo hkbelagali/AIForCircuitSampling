@@ -65,6 +65,19 @@ def forward_kl(p, log_q):
     return kl, q_mass
 
 
+def total_variation(p, log_q):
+    """Total variation distance TV(p, q) = 1/2 sum_x |p(x) - q(x)| in [0, 1].
+
+    Accuracy is reported as overlap = 1 - TV = sum_x min(p(x), q(x)): the
+    fraction of the true distribution the model captures (1 = perfect).
+    """
+    p = np.asarray(p, dtype=np.float64)
+    p = p / p.sum()
+    q = np.exp(log_q)
+    q = q / q.sum()  # defensive; q-mass is ~1 by construction
+    return 0.5 * float(np.sum(np.abs(p - q)))
+
+
 def shannon_entropy(p):
     p = np.asarray(p, dtype=np.float64)
     p = p / p.sum()
