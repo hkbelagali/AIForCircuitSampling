@@ -209,15 +209,39 @@ def _series(res, prefix, metric):
 
 
 HEADLINE_SERIES = [
-    ("hubbard_neel", "Néel Hubbard (U/t=8)", "#2a9d8f", "o-"),
-    ("hubbard_regular", "regular Hubbard (U/t=4)", "#457b9d", "s-"),
-    ("rcs", "RCS (Porter-Thomas)", "#e76f51", "D-"),
+    ("hubbard_neel", r"Hubbard $U/t=8$", "#2a9d8f", "o-"),
+    ("hubbard_regular", r"Hubbard $U/t=4$", "#457b9d", "s-"),
+    ("rcs", "RCS", "#e76f51", "D-"),
 ]
+
+
+def _p_for_family(fam):
+    L_match = N_MATCH // 2
+    if fam == "hubbard_neel":
+        return hubbard_p(L_match, 8.0)[0]
+    if fam == "hubbard_regular":
+        return hubbard_p(L_match, 4.0)[0]
+    return rcs_p(N_MATCH)
+
+
+def _uniform_overlap(p):
+    return float(np.sum(np.minimum(p, 1.0 / len(p))))
 
 
 def make_accuracy_plot(res):
     L_match = N_MATCH // 2
-    fig, ax = plt.subplots(figsize=(7.8, 5.2))
+    fig, ax = plt.subplots(figsize=(7.2, 4.7))
+    xr = K_VALUES[-1]
+    label_x = xr * 1.25
+    placed = []
+
+    def label_line(y, text, color):
+        if any(abs(y - yp) < 0.03 for yp in placed):
+            return
+        ax.text(label_x, y, text, color=color, fontsize=8,
+                va="center", ha="left", clip_on=False)
+        placed.append(y)
+
     for fam, label, color, fmt in HEADLINE_SERIES:
         prefix = f"{fam}_L{L_match}" if fam.startswith("hubbard") else f"{fam}_n{N_MATCH}"
         ks, tv_m, tv_s, tv_floor = _series(res, prefix, "tv")
@@ -225,16 +249,16 @@ def make_accuracy_plot(res):
             continue
         ax.errorbar(ks, 1 - tv_m, yerr=tv_s, fmt=fmt, color=color, label=label,
                     capsize=3, markersize=6, linewidth=1.9)
-        if tv_floor is not None:
-            ax.axhline(1 - tv_floor, color=color, ls=":", alpha=0.55)
+        unif = _uniform_overlap(_p_for_family(fam))
+        ax.axhline(unif, color=color, ls="--", alpha=0.5)
+        label_line(unif, "uniform", color)
     ax.set_xscale("log")
-    ax.set_ylim(0, 1.03)
-    ax.set_xlabel("training samples  $k$")
-    ax.set_ylabel(r"accuracy $=\,1-\mathrm{TV}(p,\,q_\theta)$   (distribution overlap)")
-    ax.set_title(f"Accuracy vs training samples (exact, matched $n={N_MATCH}$)\n"
-                 f"dotted = capacity ceiling (best achievable at infinite data)")
-    ax.legend(fontsize=9, loc="lower right")
-    ax.grid(alpha=0.3, which="both")
+    ax.set_ylim(0, 1.0)
+    ax.set_xlim(K_VALUES[0] * 0.8, xr * 1.7)
+    ax.set_xlabel("training samples")
+    ax.set_ylabel("accuracy (1 − TV)")
+    ax.legend(fontsize=9, loc="lower right", frameon=False)
+    ax.grid(alpha=0.25, which="both")
     fig.tight_layout()
     out = RESULTS_PATH.parent / "m7_accuracy_vs_samples.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
