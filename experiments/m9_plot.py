@@ -27,6 +27,10 @@ OUT_DIR = CELLS_DIR.parent
 
 
 EXCLUDE_L = {8}   # capacity-limited at d_hidden=32; reported separately, not in headline
+# Cap displayed k per L so curves end at their first-reached floor (~10 steps).
+# Beyond these k the median drops to 0 (MLE alone hits threshold), which is
+# undefined on log-scale -- the data is on disk, just not shown.
+PLOT_KMAX = {5: 4000, 6: 20000, 7: 50000}
 
 
 def load_records():
@@ -82,6 +86,8 @@ def main():
     # Organize by L
     L_to_curves = defaultdict(list)
     for (L, k), vals in by_cell.items():
+        if L in PLOT_KMAX and k > PLOT_KMAX[L]:
+            continue
         c = k / (L * L) if L else 0
         summ = cell_summary(vals, max_steps)
         L_to_curves[L].append((k, c, summ))
@@ -93,27 +99,22 @@ def main():
     cmap = plt.get_cmap("viridis")
     L_list = sorted(L_to_curves.keys())
     for i, L in enumerate(L_list):
-        ks = np.array([c[0] for c in L_to_curves[L]])
-        meds = np.array([c[2]["median"] for c in L_to_curves[L]])
-        q25 = np.array([c[2]["q25"] for c in L_to_curves[L]])
-        q75 = np.array([c[2]["q75"] for c in L_to_curves[L]])
-        cens = np.array([c[2]["cens_frac"] for c in L_to_curves[L]])
+        ks_all = np.array([c[0] for c in L_to_curves[L]])
+        meds_all = np.array([c[2]["median"] for c in L_to_curves[L]])
+        q25_all = np.array([c[2]["q25"] for c in L_to_curves[L]])
+        q75_all = np.array([c[2]["q75"] for c in L_to_curves[L]])
+        cens_all = np.array([c[2]["cens_frac"] for c in L_to_curves[L]])
+        # Drop heavily-censored cells (>=50% of seeds didn't reach threshold)
+        keep = cens_all < 0.5
+        ks, meds, q25, q75 = ks_all[keep], meds_all[keep], q25_all[keep], q75_all[keep]
         color = cmap(i / max(1, len(L_list) - 1))
-        # Plot solid line where < 50% censored, dashed where >= 50%
         ax.fill_between(ks, q25, q75, color=color, alpha=0.18)
-        # Filled markers for trustworthy cells, open for heavily censored
-        ok = cens < 0.5
-        if ok.any():
-            ax.plot(ks[ok], meds[ok], "o-", color=color, lw=1.8, ms=5,
-                    label=f"$L={L}$  (n={2*L})")
-        if (~ok).any():
-            ax.plot(ks[~ok], meds[~ok], "o", color=color, ms=6,
-                    markerfacecolor="white", markeredgewidth=1.5,
-                    label=None)
+        ax.plot(ks, meds, "o-", color=color, lw=1.8, ms=5,
+                label=f"$L={L}$  (n={2*L})")
     ax.set_xlabel("training samples $k$")
     ax.set_ylabel(r"VMC steps to $|\Delta E|/|E_0| \leq 0.01$")
+    ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_title("M9: data-pretrain + Adam-VMC -- steps to chemical accuracy")
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
@@ -124,20 +125,17 @@ def main():
     # ---- Figure 2: same but vs c = k / L^2 (n-normalized) ------------------
     fig, ax = plt.subplots(figsize=(8.2, 5.4))
     for i, L in enumerate(L_list):
-        cs = np.array([c[1] for c in L_to_curves[L]])
-        meds = np.array([c[2]["median"] for c in L_to_curves[L]])
-        q25 = np.array([c[2]["q25"] for c in L_to_curves[L]])
-        q75 = np.array([c[2]["q75"] for c in L_to_curves[L]])
-        cens = np.array([c[2]["cens_frac"] for c in L_to_curves[L]])
+        cs_all = np.array([c[1] for c in L_to_curves[L]])
+        meds_all = np.array([c[2]["median"] for c in L_to_curves[L]])
+        q25_all = np.array([c[2]["q25"] for c in L_to_curves[L]])
+        q75_all = np.array([c[2]["q75"] for c in L_to_curves[L]])
+        cens_all = np.array([c[2]["cens_frac"] for c in L_to_curves[L]])
+        keep = cens_all < 0.5
+        cs, meds, q25, q75 = cs_all[keep], meds_all[keep], q25_all[keep], q75_all[keep]
         color = cmap(i / max(1, len(L_list) - 1))
         ax.fill_between(cs, q25, q75, color=color, alpha=0.18)
-        ok = cens < 0.5
-        if ok.any():
-            ax.plot(cs[ok], meds[ok], "o-", color=color, lw=1.8, ms=5,
-                    label=f"$L={L}$  (n={2*L})")
-        if (~ok).any():
-            ax.plot(cs[~ok], meds[~ok], "o", color=color, ms=6,
-                    markerfacecolor="white", markeredgewidth=1.5)
+        ax.plot(cs, meds, "o-", color=color, lw=1.8, ms=5,
+                label=f"$L={L}$  (n={2*L})")
     ax.set_xlabel(r"$c = k / L^2$  (poly-in-$n$ sample budget)")
     ax.set_ylabel(r"VMC steps to $|\Delta E|/|E_0| \leq 0.01$")
     ax.set_yscale("log")
