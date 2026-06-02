@@ -32,7 +32,12 @@ import numpy as np
 
 
 # ---- grid spec -------------------------------------------------------------
-L_VALUES = [4, 6, 8]
+# L=8 dropped from the headline -- it was capacity-limited at d_hidden=32
+# (100% censored). L=3, 5, 7 added for smoother coverage in n. Note: odd L
+# uses N_up = N_dn = L // 2 (near-half-filling), since exact half-filling
+# requires even L for an Sz=0 sector. Odd-L PBC chains aren't bipartite
+# (odd cycle), but our signs_from_psi is ED-based and works for any L.
+L_VALUES = [3, 4, 5, 6, 7]
 SEEDS = list(range(8))
 C_MIN = 0.0
 C_MAX_DEFAULT = 4.25

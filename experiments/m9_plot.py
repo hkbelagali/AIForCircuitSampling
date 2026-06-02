@@ -26,10 +26,15 @@ CELLS_DIR = Path(__file__).resolve().parents[1] / "results" / "m9_cells"
 OUT_DIR = CELLS_DIR.parent
 
 
+EXCLUDE_L = {8}   # capacity-limited at d_hidden=32; reported separately, not in headline
+
+
 def load_records():
     out = []
     for p in sorted(CELLS_DIR.glob("L*_k*_s*.json")):
         r = json.loads(p.read_text())
+        if r["L"] in EXCLUDE_L:
+            continue
         out.append(r)
     return out
 
