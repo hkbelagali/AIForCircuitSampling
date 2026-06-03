@@ -27,12 +27,14 @@ BOS_TOKEN = 2
 
 
 class ARRNN(nn.Module):
-    def __init__(self, L, n_up, n_dn, d_hidden=None, n_layers=1, dropout=0.0):
+    def __init__(self, L, n_up, n_dn, d_hidden=None, n_layers=1, dropout=0.0,
+                 learn_signs=False):
         super().__init__()
         self.L = L
         self.n_positions = 2 * L
         self.n_up = n_up
         self.n_dn = n_dn
+        self.learn_signs = learn_signs
         if d_hidden is None:
             d_hidden = max(2 * self.n_positions, 32)
         self.d_hidden = d_hidden
@@ -44,6 +46,18 @@ class ARRNN(nn.Module):
             dropout=dropout if n_layers > 1 else 0.0,
         )
         self.head = nn.Linear(d_hidden, 2)
+        # Optional sign head: 2-layer MLP from the final GRU hidden state to a
+        # real scalar (the "sign logit"). The wavefunction sign is then
+        # tanh(sign_logit) -- continuous in (-1, +1) so VMC gradients flow.
+        # 2-layer gives enough expressivity for high-degree bit-product sign
+        # rules; a single linear is only adequate when the sign rule is a
+        # GF(2)-linear function of the bits (like Heisenberg's Marshall rule).
+        if learn_signs:
+            self.sign_head = nn.Sequential(
+                nn.Linear(d_hidden, d_hidden),
+                nn.ReLU(),
+                nn.Linear(d_hidden, 1),
+            )
 
     # ---- shifting / masking (sector-mask logic mirrors ARTransformerConditional) --
 
@@ -108,6 +122,31 @@ class ARRNN(nn.Module):
     def log_psi_mag(self, x):
         """log |psi(x)| -- half the log probability (sign handled externally via MSR)."""
         return 0.5 * self.log_prob(x)
+
+    def sign_logit(self, x):
+        """Real-valued logit driving the soft sign. Requires learn_signs=True."""
+        if not self.learn_signs:
+            raise RuntimeError("sign_logit called but learn_signs=False")
+        h_seq = self.tok_embed(self._shifted_input(x))
+        out, _ = self.gru(h_seq)
+        last = out[:, -1, :]                                  # (B, d_hidden)
+        return self.sign_head(last).squeeze(-1)               # (B,)
+
+    def soft_sign(self, x):
+        """Continuous-valued sign in (-1, 1) via tanh of the sign logit.
+        Used in place of ctx.signs when learn_signs=True."""
+        return torch.tanh(self.sign_logit(x))
+
+    def magnitude_params(self):
+        """All params controlling |Psi| (everything except the sign head)."""
+        for name, p in self.named_parameters():
+            if not name.startswith("sign_head"):
+                yield p
+
+    def sign_params(self):
+        for name, p in self.named_parameters():
+            if name.startswith("sign_head"):
+                yield p
 
     # ---- sampling ---------------------------------------------------------------
 

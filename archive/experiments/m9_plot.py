@@ -111,7 +111,7 @@ def main():
         ax.fill_between(ks, q25, q75, color=color, alpha=0.18)
         ax.plot(ks, meds, "o-", color=color, lw=1.8, ms=5,
                 label=f"$L={L}$  (n={2*L})")
-    ax.set_xlabel("training samples $k$")
+    ax.set_xlabel("training samples")
     ax.set_ylabel(r"VMC steps to $|\Delta E|/|E_0| \leq 0.01$")
     ax.set_xscale("log")
     ax.set_yscale("log")

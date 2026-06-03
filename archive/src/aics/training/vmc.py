@@ -43,8 +43,15 @@ class VMCState:
     optimizer: Any = None        # _HandAdam, lazily built on first sr/vmc_step
 
 
-def vmc_step(model, ctx, vmc_state, cfg, local_energy_fn, device="cpu"):
-    """One Adam-VMC update, mutating model parameters in-place. Returns metrics dict."""
+def vmc_step(model, ctx, vmc_state, cfg, local_energy_fn, device="cpu",
+             signed=False):
+    """One Adam-VMC update, mutating model parameters in-place. Returns metrics dict.
+
+    If signed=True, the surrogate loss uses log|Psi(x)| = log|tanh(sign_logit(x))|
+    + log_psi_mag(x), so gradients flow through the model's learned sign head.
+    Requires model.learn_signs=True and a local_energy_fn that consumes
+    model-predicted signs (e.g., local_energy_hubbard_signed).
+    """
     if vmc_state.optimizer is None:
         params = [p for p in model.parameters() if p.requires_grad]
         vmc_state.optimizer = _HandAdam(params, lr=cfg.lr, betas=cfg.betas)
@@ -63,7 +70,12 @@ def vmc_step(model, ctx, vmc_state, cfg, local_energy_fn, device="cpu"):
     centered_E = (E_vec - E_mean).detach()
 
     # 3. log|psi| with grad on the same samples; one backward pass.
-    log_psi = model.log_psi_mag(x_bits)                       # (B,) with grad
+    if signed:
+        # log|Psi| = log|tanh(sign_logit)| + log_psi_mag
+        log_abs_s = torch.log(torch.abs(model.soft_sign(x_bits)) + 1e-12)
+        log_psi = log_abs_s + model.log_psi_mag(x_bits)
+    else:
+        log_psi = model.log_psi_mag(x_bits)                   # (B,) with grad
     loss = (log_psi * centered_E).mean()                      # scalar; grads only on log_psi
 
     opt.zero_grad()
