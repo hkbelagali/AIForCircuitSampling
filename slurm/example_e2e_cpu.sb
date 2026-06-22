@@ -1,0 +1,52 @@
+#!/bin/bash
+#SBATCH --job-name=aics_e2e_cpu
+#SBATCH --partition=general-short
+#SBATCH --time=03:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8G
+#SBATCH --output=results/slurm/aics_e2e_cpu_%j.out
+#SBATCH --error=results/slurm/aics_e2e_cpu_%j.err
+#
+# Example end-to-end aics run on CPU. Same flow as example_e2e_gpu.sb but
+# without --gpu. Useful for n <= ~20 where the contraction is small.
+#
+
+module purge
+module load NVHPC/23.7-CUDA-12.1.1
+module load OpenMPI/4.1.5-NVHPC-23.7-CUDA-12.1.1
+module load FlexiBLAS/3.3.1-NVHPC-23.7-CUDA-12.1.1
+
+PY=/mnt/ffs24/home/rowlan91/.conda/envs/thesisEnv/bin/python3
+cd /mnt/ffs24/home/rowlan91/AIForCircuitSampling
+
+N=${N:-12}
+DEPTH=${DEPTH:-10}
+K_MAX=${K_MAX:-100000}
+K_TRAIN=${K:-10000}
+HIDDEN=${H:-128}
+SEED=${SEED:-0}
+SAMPLES_DIR=results/tn_samples_aics
+RESULTS_DIR=results/m_rcs_nll_aics
+
+mkdir -p $SAMPLES_DIR $RESULTS_DIR results/slurm
+
+SAMPLE_NPZ=$SAMPLES_DIR/n${N}_d${DEPTH}_cs42_ss0_k${K_MAX}.npz
+if [ ! -f "$SAMPLE_NPZ" ]; then
+  $PY -u scripts/sample.py \
+    --n $N --depth $DEPTH --k_max $K_MAX \
+    --sampler exact_tn --dtype complex128 \
+    --out_dir $SAMPLES_DIR
+fi
+
+OUT=$RESULTS_DIR/n${N}_d${DEPTH}_k${K_TRAIN}_h${HIDDEN}_s${SEED}.json
+LOG_JSON=$RESULTS_DIR/n${N}_d${DEPTH}_k${K_TRAIN}_h${HIDDEN}_s${SEED}.epochs.jsonl
+$PY -u scripts/train.py \
+  --samples_npz $SAMPLE_NPZ \
+  --k_train $K_TRAIN \
+  --model_seed $SEED \
+  --hidden $HIDDEN \
+  --loss nll --pt_regularizer --pt_lambda 0.01 \
+  --log_json $LOG_JSON \
+  --out $OUT
+
+$PY -u scripts/plot.py --in_dir $RESULTS_DIR --out_dir plots
