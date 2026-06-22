@@ -38,8 +38,8 @@ def test_report_returns_canonical_keys():
     held_bits = rng.integers(0, 2, size=(50, n), dtype=np.uint8)
     held_pC = rng.dirichlet(np.ones(50))
     uniform_pC = rng.dirichlet(np.ones(50))
-    out = report(model, held_bits=held_bits, held_pC=held_pC,
-                  uniform_pC=uniform_pC, n_qubits=n, device="cpu")
+    out = report(model, n, held_bits=held_bits, held_pC=held_pC,
+                  uniform_pC=uniform_pC, device="cpu")
     for key in ("held_nll", "normalized_nll", "nll_excess",
                  "xeb_gen", "xeb_held_cache", "xeb_uniform_cache", "xeb_norm"):
         assert key in out, f"missing {key}"
@@ -51,7 +51,7 @@ def test_report_empty_when_no_held():
     n = 4
     torch.manual_seed(0)
     model = AutoregressiveRNN(n_bits=n, hidden=8, n_layers=1)
-    assert report(model, n_qubits=n) == {}
+    assert report(model, n) == {}
 
 
 def test_train_cell_end_to_end_nll():
@@ -60,7 +60,7 @@ def test_train_cell_end_to_end_nll():
         npz = Path(tmp) / "toy.npz"
         _toy_npz(npz, n_qubits=n, k=100, k_held=20, k_uni=20)
         result, model = train_cell(
-            npz, k_train=80, hidden=8, n_layers=1, loss="nll",
+            npz, 80, hidden=8, n_layers=1, loss="nll",
             total_steps=20, min_epochs=2, max_epochs=2, batch_size=16,
             device="cpu",
         )
@@ -76,7 +76,7 @@ def test_train_cell_rejects_curriculum_with_nll():
         npz = Path(tmp) / "toy.npz"
         _toy_npz(npz, n_qubits=4, k=40)
         try:
-            train_cell(npz, k_train=20, hidden=8, n_layers=1, loss="nll",
+            train_cell(npz, 20, hidden=8, n_layers=1, loss="nll",
                         curriculum="weight_ascending",
                         total_steps=2, min_epochs=1, max_epochs=1,
                         device="cpu")
@@ -91,7 +91,7 @@ def test_train_cell_rejects_pt_with_z_pauli():
         npz = Path(tmp) / "toy.npz"
         _toy_npz(npz, n_qubits=4, k=40)
         try:
-            train_cell(npz, k_train=20, hidden=8, n_layers=1,
+            train_cell(npz, 20, hidden=8, n_layers=1,
                         loss="z_pauli", pt_regularizer=True,
                         epochs_per_stage=2, device="cpu")
         except ValueError as e:

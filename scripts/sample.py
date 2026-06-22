@@ -116,8 +116,10 @@ def maybe_combine(args):
     ]
     missing = [p for p in chunk_paths if not p.exists()]
     if missing:
-        print(f"[combine] skipping — {len(missing)}/{args.n_chunks} chunks missing",
+        print(f"[combine] skipping — {len(missing)}/{args.n_chunks} chunks missing:",
               flush=True)
+        for p in missing:
+            print(f"  {p.name}", flush=True)
         return None
     canonical = out_dir / f"{_canonical_tag(args.n, args.depth, args.circuit_seed, args.sample_seed, args.k_max)}.npz"
     combine_chunks(chunk_paths, canonical)

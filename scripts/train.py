@@ -61,7 +61,7 @@ def main():
 
     logger = JsonLogger(args.log_json) if args.log_json else None
     result, _ = train_cell(
-        args.samples_npz, k_train=args.k_train, model_seed=args.model_seed,
+        args.samples_npz, args.k_train, model_seed=args.model_seed,
         hidden=args.hidden, n_layers=args.n_layers,
         loss=args.loss, pt_regularizer=args.pt_regularizer,
         pt_lambda=args.pt_lambda, lr=args.lr,
@@ -81,11 +81,16 @@ def main():
 
     save_result(args.out, result)
     print(f"[train] wrote {args.out}", flush=True)
-    for k in ("loss", "final_nll", "final_loss", "held_nll", "xeb_gen", "xeb_norm"):
-        if k in result:
-            v = result[k]
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}",
-                  flush=True)
+    # Echo every scalar field from result so new metrics show up automatically.
+    _skip_in_summary = {"samples_npz", "checkpoint", "curriculum_stages",
+                         "provenance"}
+    for k, v in result.items():
+        if k in _skip_in_summary:
+            continue
+        if isinstance(v, float):
+            print(f"  {k}: {v:.4f}", flush=True)
+        elif isinstance(v, (int, str, bool)) or v is None:
+            print(f"  {k}: {v}", flush=True)
 
 
 if __name__ == "__main__":

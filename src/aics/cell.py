@@ -8,8 +8,8 @@ Example:
 
     from aics import train_cell
     result, model = train_cell(
-        "results/tn_samples/n12_d10_cs42_ss0_k100000.npz",
-        k_train=10_000, hidden=128, loss="nll")
+        "results/tn_samples/n12_d10_cs42_ss0_k100000.npz", 10_000,
+        hidden=128, loss="nll")
     print(result["xeb_norm"])
 """
 import numpy as np
@@ -23,7 +23,7 @@ from .training.curriculum import weight_ascending
 from .eval import enumerate_z_supports, report
 
 
-def train_cell(samples_npz, *, k_train, hidden=128, n_layers=2,
+def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
                 loss="nll", pt_regularizer=None, pt_lambda=LAMBDA_PT,
                 lr=1e-3, total_steps=50_000, min_epochs=50, max_epochs=5_000,
                 batch_size=512,
@@ -129,11 +129,11 @@ def train_cell(samples_npz, *, k_train, hidden=128, n_layers=2,
 
     model.eval()
     result.update(report(
-        model,
+        model, n_qubits,
         held_bits=data.get("held_bits"),
         held_pC=data.get("held_pC"),
         uniform_pC=data.get("uniform_pC"),
-        n_qubits=n_qubits, device=device,
+        device=device,
     ))
 
     if save_to:

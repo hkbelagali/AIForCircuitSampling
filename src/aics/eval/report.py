@@ -11,8 +11,8 @@ from .nll import held_nll, normalized_nll, nll_excess
 
 
 @torch.no_grad()
-def report(model, *, held_bits=None, held_pC=None, uniform_pC=None,
-            n_qubits, device=None):
+def report(model, n_qubits, *, held_bits=None, held_pC=None, uniform_pC=None,
+            device=None):
     """Score `model` against a sample bundle. Returns a dict of metrics.
 
     Missing inputs → missing keys (no error). Always at least returns {}.

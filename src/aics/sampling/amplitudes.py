@@ -5,8 +5,15 @@ from ._quimb_circuit import _resolve_qcirc
 
 
 def amplitudes_tn(circ, qubits, bitstrings, *,
-                    optimize="auto-hq", dtype=None):
-    """(k, n_qubits) uint8 bits (MSB-first) → (k,) float64 probabilities."""
+                    optimize="greedy", dtype=None):
+    """(k, n_qubits) uint8 bits (MSB-first) → (k,) float64 probabilities.
+
+    Default optimize="greedy" — every output leg is projected at amplitude
+    time so the TN is small and greedy paths are fine. quimb caches the
+    contraction path across successive amplitude() calls so per-call
+    re-optimisation isn't the bottleneck. Pass optimize="auto-hq" or a
+    prebuilt cotengra tree for harder geometries.
+    """
     qcirc = _resolve_qcirc(circ, qubits)
     bs = np.asarray(bitstrings, dtype=np.uint8)
     probs = np.empty(len(bs), dtype=np.float64)
