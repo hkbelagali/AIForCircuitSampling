@@ -16,7 +16,7 @@ from aics.circuits import (
 )
 from aics.sampling import sample_exact_tn, sample_chaotic, amplitudes_tn
 from aics.io import save_samples, combine_chunks
-from aics.training import print_hardware, assert_device_available
+from aics.runtime import print_hardware, assert_device_available
 
 
 def _build_circuit(name, n, depth, seed):
@@ -144,13 +144,15 @@ def main():
     p.add_argument("--n_chunks", type=int, default=1)
     p.add_argument("--combine", action="store_true",
                     help="merge existing chunks and exit")
+    p.add_argument("--device", default=None,
+                    help="cpu | cuda | cuda:N (default: cpu unless --gpu)")
     p.add_argument("--gpu", action="store_true",
-                    help="require CUDA; hard error if unavailable")
+                    help="shortcut for --device cuda; hard error if no CUDA")
     p.add_argument("--dtype", type=str, default="complex128")
     p.add_argument("--out_dir", type=str, default="results/tn_samples")
     args = p.parse_args()
 
-    device = assert_device_available(args.gpu)
+    device = assert_device_available(args.gpu, requested_device=args.device)
     if args.gpu and args.dtype == "complex128":
         print("[sample] note: --gpu with complex128 is slow; "
               "consider --dtype complex64", flush=True)

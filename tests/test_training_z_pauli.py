@@ -1,6 +1,5 @@
 """Z-observable training: AutoregressiveRNN fits empirical <Z_S> targets."""
 import numpy as np
-import pytest
 import torch
 
 from aics.training.z_pauli import train_z_pauli

@@ -40,7 +40,7 @@ def _add_cz_layer(layer_index: int, circuit: cirq.Circuit) -> int:
     return layer_index
 
 
-def generate_rcs_circuit(qubits, depth, seed):
+def _generate_rcs_circuit(qubits, depth, seed):
     non_diagonal_gates = [cirq.X ** (1 / 2), cirq.Y ** (1 / 2)]
     rand_gen = random.Random(seed).random
     circuit = cirq.Circuit()
@@ -89,4 +89,4 @@ def make_boixo_v2_rcs_circuit(n_qubits, depth=10, seed=42):
     n_rows, n_cols = grid_dimensions(n_qubits)
     qubits = [cirq.GridQubit(i, j)
               for i in range(n_rows) for j in range(n_cols)]
-    return qubits, generate_rcs_circuit(qubits, depth, seed)
+    return qubits, _generate_rcs_circuit(qubits, depth, seed)

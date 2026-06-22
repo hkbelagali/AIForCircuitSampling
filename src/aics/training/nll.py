@@ -62,7 +62,3 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
             logger.log(stage="nll", epoch=ep, n_epochs=n_epochs,
                         avg_nll=last_nll, lambda_pt=lambda_pt)
     return last_nll, n_epochs
-
-
-# Back-compat alias for anything still calling the old name.
-train_nll_pt = train_nll

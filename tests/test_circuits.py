@@ -2,7 +2,6 @@
 and src/aics/circuits/ (post-migration) via conftest.py path setup.
 """
 import numpy as np
-import pytest
 
 from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit, grid_dimensions
 from aics.circuits.exact import exact_probabilities

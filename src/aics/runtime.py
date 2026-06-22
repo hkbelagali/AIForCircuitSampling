@@ -23,14 +23,24 @@ def print_hardware(device, dtype=None, extra=None):
     print("[hardware] " + "  ".join(line), flush=True)
 
 
-def assert_device_available(want_gpu, requested_label="--gpu"):
-    """Hard error if --gpu was set but CUDA isn't available. No silent CPU fallback."""
-    if want_gpu:
+def assert_device_available(want_gpu, requested_device=None,
+                              requested_label="--gpu"):
+    """Resolve a device string. `requested_device` overrides `want_gpu`.
+
+    Accepts "cpu", "cuda", "cuda:N". Hard error if CUDA was requested but
+    `torch.cuda.is_available()` is False — no silent CPU fallback.
+    """
+    device = requested_device if requested_device else ("cuda" if want_gpu else "cpu")
+    if device.startswith("cuda"):
         if not torch.cuda.is_available():
             raise RuntimeError(
                 f"{requested_label} was requested but torch.cuda.is_available() is False.")
-        return "cuda"
-    return "cpu"
+        if ":" in device:
+            idx = int(device.split(":", 1)[1])
+            if idx >= torch.cuda.device_count():
+                raise RuntimeError(
+                    f"{device} requested but only {torch.cuda.device_count()} GPU(s) available.")
+    return device
 
 
 def save_checkpoint(path, model, optimizer=None, scheduler=None,

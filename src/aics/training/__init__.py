@@ -1,4 +1,4 @@
-from .nll import train_nll, train_nll_pt, BATCH_SIZE, TOTAL_STEPS, MIN_EPOCHS, MAX_EPOCHS, LAMBDA_PT
+from .nll import train_nll, BATCH_SIZE, TOTAL_STEPS, MIN_EPOCHS, MAX_EPOCHS, LAMBDA_PT
 from .z_pauli import train_z_pauli
 from .pt_regularizer import pt_term
 from .curriculum import weight_ascending, SCHEDULES
@@ -10,7 +10,7 @@ from ..runtime import (
 )
 
 __all__ = [
-    "train_nll", "train_nll_pt", "train_z_pauli", "pt_term",
+    "train_nll", "train_z_pauli", "pt_term",
     "weight_ascending", "SCHEDULES",
     "print_hardware", "assert_device_available",
     "save_checkpoint", "load_checkpoint", "JsonLogger",

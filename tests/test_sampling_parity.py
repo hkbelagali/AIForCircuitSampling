@@ -2,7 +2,6 @@
 at small n, and sample_chaotic shows the documented bias.
 """
 import numpy as np
-import pytest
 
 from aics.sampling import sample_exact_tn as _sample_exact_tn_raw
 from aics.sampling import sample_chaotic as _sample_chaotic_raw

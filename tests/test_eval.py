@@ -1,6 +1,5 @@
 """Eval metrics: XEB, parity, per-weight RMS error — known-input sanity."""
 import numpy as np
-import pytest
 
 from aics.eval.xeb import linear_xeb
 from aics.eval.z_observables import empirical_z_expectations, per_weight_rms_err
