@@ -7,22 +7,12 @@ import numpy as np
 import pytest
 import torch
 
-try:
-    from aics.training.z_pauli import train_z_pauli
-    from aics.eval.z_observables import (
-        enumerate_z_supports, empirical_z_expectations, model_z_expectations,
-    )
-    from aics.models.autoregressive_rnn import AutoregressiveRNN
-    NEW_API = True
-except ImportError:
-    from rcs import (
-        BitstringARRNN as AutoregressiveRNN,
-        train_rnn_z_pauli as train_z_pauli,
-        enumerate_z_supports,
-        shadow_z_expectations as empirical_z_expectations,
-        model_z_expectations,
-    )
-    NEW_API = False
+from aics.training.z_pauli import train_z_pauli
+from aics.eval.z_observables import (
+    enumerate_z_supports, empirical_z_expectations, model_z_expectations,
+)
+from aics.models.autoregressive_rnn import AutoregressiveRNN
+NEW_API = True  # legacy flag, kept so existing skipif logic still parses
 
 
 def _toy_samples(n, k, seed):

@@ -4,38 +4,19 @@ at small n, and sample_chaotic shows the documented bias.
 import numpy as np
 import pytest
 
-try:
-    from aics.sampling import sample_exact_tn as _sample_exact_tn_raw
-    from aics.sampling import sample_chaotic as _sample_chaotic_raw
-
-    def sample_exact_tn(circ, qubits, k, seed=0):
-        return _sample_exact_tn_raw(circ, qubits, k_samples=k, seed=seed)
-
-    def sample_chaotic(circ, qubits, k, marginal_qubits, seed=0):
-        return _sample_chaotic_raw(circ, qubits, k_samples=k, seed=seed,
-                                     marginal_qubits=marginal_qubits)
-except ImportError:
-    # Pre-migration shims
-    import tn_rcs
-    from boixo_v2_rcs import make_boixo_v2_rcs_circuit
-    import pcz_sampler
-
-    def sample_exact_tn(circ, qubits, k, seed=0):
-        tn = pcz_sampler.cirq_to_pcz_tn(circ, qubits)
-        return pcz_sampler.sample_pcz_marginal(tn, k_samples=k, seed=seed)
-
-    def sample_chaotic(circ, qubits, k, marginal_qubits, seed=0):
-        qcirc, _ = tn_rcs.cirq_to_quimb(circ, qubits)
-        return tn_rcs.sample_tn(qcirc, k_samples=k, seed=seed,
-                                  marginal_qubits=marginal_qubits)
-
-# These always come from cirq directly:
+from aics.sampling import sample_exact_tn as _sample_exact_tn_raw
+from aics.sampling import sample_chaotic as _sample_chaotic_raw
 from aics.circuits.exact import exact_probabilities, sample_from_circuit
+from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit
 
-try:
-    from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit
-except ImportError:
-    from boixo_v2_rcs import make_boixo_v2_rcs_circuit
+
+def sample_exact_tn(circ, qubits, k, seed=0):
+    return _sample_exact_tn_raw(circ, qubits, k_samples=k, seed=seed)
+
+
+def sample_chaotic(circ, qubits, k, marginal_qubits, seed=0):
+    return _sample_chaotic_raw(circ, qubits, k_samples=k, seed=seed,
+                                 marginal_qubits=marginal_qubits)
 
 
 def _xeb(samples_bits, pC, n):

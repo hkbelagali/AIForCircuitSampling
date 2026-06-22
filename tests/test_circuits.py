@@ -4,17 +4,8 @@ and src/aics/circuits/ (post-migration) via conftest.py path setup.
 import numpy as np
 import pytest
 
-# Pre-migration: from prototype/. Post-migration this becomes
-# `from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit`.
-try:
-    from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit, grid_dimensions
-except ImportError:
-    from boixo_v2_rcs import make_boixo_v2_rcs_circuit, grid_dimensions
-
-try:
-    from aics.circuits.exact import exact_probabilities
-except ImportError:
-    from aics.circuits.exact import exact_probabilities  # already in archive/src/aics
+from aics.circuits.boixo_v2 import make_boixo_v2_rcs_circuit, grid_dimensions
+from aics.circuits.exact import exact_probabilities
 
 
 def test_grid_dimensions_returns_2_row_ladders_for_even_n():

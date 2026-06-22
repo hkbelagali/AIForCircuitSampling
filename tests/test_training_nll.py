@@ -3,11 +3,8 @@ import numpy as np
 import pytest
 import torch
 
-try:
-    from aics.models.autoregressive_rnn import AutoregressiveRNN
-    from aics.training.nll import train_nll_pt
-except ImportError:
-    from m_rcs_nll_eval_cell import AutoregressiveRNN, train_nll_pt
+from aics.models.autoregressive_rnn import AutoregressiveRNN
+from aics.training.nll import train_nll_pt
 
 
 @pytest.fixture

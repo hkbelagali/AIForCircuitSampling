@@ -3,10 +3,7 @@ import numpy as np
 import pytest
 import torch
 
-try:
-    from aics.models.autoregressive_rnn import AutoregressiveRNN
-except ImportError:
-    from m_rcs_nll_eval_cell import AutoregressiveRNN
+from aics.models.autoregressive_rnn import AutoregressiveRNN
 
 
 @pytest.fixture

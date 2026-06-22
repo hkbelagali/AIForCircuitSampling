@@ -2,13 +2,8 @@
 import numpy as np
 import pytest
 
-try:
-    from aics.eval.xeb import linear_xeb
-    from aics.eval.z_observables import parity_per_support, per_weight_rms_err
-except ImportError:
-    from m_rcs_nll_eval_cell import (
-        linear_xeb, parity_per_support, per_weight_rms_err,
-    )
+from aics.eval.xeb import linear_xeb
+from aics.eval.z_observables import parity_per_support, per_weight_rms_err
 
 
 def test_linear_xeb_uniform_samples_near_zero():
