@@ -1,5 +1,7 @@
 """Boixo et al. 2018 ("Google v2") random circuit: CZ + {T, sqrt-X, sqrt-Y}
 sandwiched between H layers. Ported from cell 9 of rcs_ml_experiment.ipynb.
+
+`depth` counts CZ layers; each carries a layer of single-qubit gates.
 """
 import random
 from typing import Callable, Iterable, Sequence, TypeVar, cast
@@ -38,19 +40,19 @@ def _add_cz_layer(layer_index: int, circuit: cirq.Circuit) -> int:
     return layer_index
 
 
-def generate_rcs_circuit(qubits, cz_depth, seed):
+def generate_rcs_circuit(qubits, depth, seed):
     non_diagonal_gates = [cirq.X ** (1 / 2), cirq.Y ** (1 / 2)]
     rand_gen = random.Random(seed).random
     circuit = cirq.Circuit()
     circuit.append(cirq.H(q) for q in qubits)
 
     layer_index = 0
-    if cz_depth:
+    if depth:
         layer_index = _add_cz_layer(layer_index, circuit)
         for q in qubits:
             if not circuit.operation_at(q, 1):
                 circuit.append(cirq.T(q), strategy=cirq.InsertStrategy.EARLIEST)
-        for moment_index in range(2, cz_depth + 1):
+        for moment_index in range(2, depth + 1):
             layer_index = _add_cz_layer(layer_index, circuit)
             for q in qubits:
                 if not circuit.operation_at(q, moment_index):
@@ -74,7 +76,7 @@ def generate_rcs_circuit(qubits, cz_depth, seed):
 def grid_dimensions(n_qubits):
     """Smallest n_rows >= 2 dividing n_qubits, else (1, n_qubits).
 
-    Even n yields a 2-row ladder; n=12 → (2, 6), n=24 → (2, 12), etc.
+    Even n_qubits → 2-row ladder; n=12 → (2, 6), n=24 → (2, 12), etc.
     """
     for n_rows in range(2, n_qubits + 1):
         if n_qubits % n_rows == 0:
@@ -82,9 +84,9 @@ def grid_dimensions(n_qubits):
     return 1, n_qubits
 
 
-def make_boixo_v2_rcs_circuit(n_qubits, cz_depth=10, seed=42):
-    """Returns (qubits, circuit). Same shape as `make_sycamore_rcs_circuit`."""
+def make_boixo_v2_rcs_circuit(n_qubits, depth=10, seed=42):
+    """Returns (qubits, circuit). `depth` = number of CZ layers."""
     n_rows, n_cols = grid_dimensions(n_qubits)
     qubits = [cirq.GridQubit(i, j)
               for i in range(n_rows) for j in range(n_cols)]
-    return qubits, generate_rcs_circuit(qubits, cz_depth, seed)
+    return qubits, generate_rcs_circuit(qubits, depth, seed)

@@ -1,7 +1,7 @@
 [project]
 name = "aics-circuit-sampling"
 version = "0.2.0"
-description = "AI for Circuit Sampling — RCS-NLL learning pipeline (aics) and Hubbard sample-complexity (m9)."
+description = "AI for Circuit Sampling — RCS-NLL learning pipeline. m9 (Hubbard sample-complexity) ships archived."
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
@@ -18,8 +18,8 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = [".", "src"]
-include = ["m9*", "aics*"]
+where = ["src", "archive"]
+include = ["aics*", "m9*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

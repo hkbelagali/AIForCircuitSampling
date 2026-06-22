@@ -8,15 +8,15 @@ import numpy as np
 from ._quimb_circuit import _resolve_qcirc
 
 
-def sample_exact_tn(circ_or_qcirc, qubits=None, *, k_samples,
+def sample_exact_tn(circ, qubits=None, *, k_samples,
                      seed=None, group_size=10, optimize="auto-hq",
                      dtype="complex64", to_backend=None,
                      max_marginal_storage=2 ** 20):
-    """Returns (k_samples, n) uint8, MSB-first."""
-    qcirc = _resolve_qcirc(circ_or_qcirc, qubits,
-                            dtype=dtype, to_backend=to_backend)
-    n = qcirc.N
-    out = np.empty((k_samples, n), dtype=np.uint8)
+    """`circ` is a cirq.Circuit (+ qubits) or a prebuilt quimb Circuit.
+    Returns (k_samples, n_qubits) uint8, MSB-first."""
+    qcirc = _resolve_qcirc(circ, qubits, dtype=dtype, to_backend=to_backend)
+    n_qubits = qcirc.N
+    out = np.empty((k_samples, n_qubits), dtype=np.uint8)
     gen = qcirc.sample(
         C=k_samples, group_size=group_size, seed=seed,
         optimize=optimize, dtype=dtype,

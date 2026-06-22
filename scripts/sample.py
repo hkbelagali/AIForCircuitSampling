@@ -21,7 +21,7 @@ from aics.training import print_hardware, assert_device_available
 
 def _build_circuit(name, n, depth, seed):
     if name == "boixo_v2":
-        return make_boixo_v2_rcs_circuit(n, cz_depth=depth, seed=seed)
+        return make_boixo_v2_rcs_circuit(n, depth=depth, seed=seed)
     if name == "sycamore":
         return make_sycamore_rcs_circuit(n_qubits=n, depth=depth, seed=seed)
     raise ValueError(f"unknown circuit family: {name!r}")

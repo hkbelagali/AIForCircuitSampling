@@ -9,12 +9,12 @@ import numpy as np
 from ..io.conventions import bits_to_int
 
 
-def linear_xeb(samples_idx, pC):
-    return float(len(pC) * pC[samples_idx].mean() - 1)
-
-
-def linear_xeb_from_bits(samples_bits, pC):
-    return linear_xeb(bits_to_int(samples_bits), pC)
+def linear_xeb(samples, pC):
+    """`samples` is either (k,) integer indices or (k, n) MSB-first bits."""
+    samples = np.asarray(samples)
+    if samples.ndim == 2:
+        samples = bits_to_int(samples)
+    return float(len(pC) * pC[samples].mean() - 1)
 
 
 def normalized_xeb(xeb_gen, xeb_uniform, xeb_held):

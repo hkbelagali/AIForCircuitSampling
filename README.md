@@ -2,8 +2,6 @@
 
 Learning RCS output distributions from bitstring samples. Walk-through: [`notebooks/rcs_ml_experiment.ipynb`](notebooks/rcs_ml_experiment.ipynb).
 
-Companion: [`m9`](m9/) — Hubbard ground-state sample complexity ([`notebooks/hubbard_sample_complexity.ipynb`](notebooks/hubbard_sample_complexity.ipynb)). Both ship from this repo.
-
 ## Setup
 
 ```
@@ -19,19 +17,20 @@ src/aics/
   sampling/       exact_tn (default, unbiased), chaotic (biased baseline), amplitudes
   models/         AutoregressiveRNN (LSTM, hidden=128)
   training/       nll (+ optional PT reg), z_pauli (+ optional curriculum)
-  eval/           xeb, nll metrics, z_observables, diversity, entropy
+  eval/           xeb, nll metrics, z_observables, diversity, entropy, report
   io/             bit/qubit conventions, .npz samples, .json results, provenance
+  runtime.py      device check, hardware banner, checkpoint I/O, JsonLogger
+  cell.py         train_cell() — notebook-friendly Stage B helper
 
 scripts/          sample.py, train.py, plot.py
 slurm/            example_e2e_{gpu,cpu}.sb
-notebooks/        rcs_ml_experiment.ipynb, hubbard_sample_complexity.ipynb
-tests/            pytest suite
+notebooks/        rcs_ml_experiment.ipynb
+tests/            aics pytest suite (27 tests)
 plots/            committed figures
-archive/          historical code (prototype-v1/, src/)
-m9/               Hubbard package
+archive/          historical code: prototype-v1/, src/, m9/ (deprecated)
 ```
 
-## Quickstart
+## Quickstart (CLI)
 
 ```bash
 python scripts/sample.py --n 12
@@ -42,7 +41,7 @@ python scripts/train.py \
 python scripts/plot.py
 ```
 
-`--gpu` requires CUDA (hard error if unavailable; no silent CPU fallback). All scripts print a hardware banner.
+`--gpu` requires CUDA (hard error if unavailable; no silent CPU fallback). Every script prints a hardware banner.
 
 Z-observable training with curriculum:
 ```bash
@@ -52,12 +51,26 @@ python scripts/train.py --samples_npz <npz> --k_train 2000 \
 ```
 `--pt_regularizer` is rejected with `--loss z_pauli`; `--curriculum` is rejected with `--loss nll`.
 
+## Quickstart (notebook)
+
+```python
+from aics import train_cell
+
+result, model = train_cell(
+    "results/tn_samples/n12_d10_cs42_ss0_k100000.npz",
+    k_train=10_000, hidden=128, loss="nll",
+)
+print(result["xeb_norm"])
+```
+
+Same flag rules as the CLI. Returns `(result_dict, model)`.
+
 ## Samplers
 
 | Sampler | Method | Bias | When |
 |---|---|---|---|
 | `exact_tn` *(default)* | `quimb.Circuit.sample`: sequential marginal-conditional, lightcone-trimmed, marginal caching | exact | always |
-| `chaotic` | `quimb.Circuit.sample_chaotic`: uniform prior on non-marginal qubits | **biased** when marginal < n | v1 comparison only |
+| `chaotic` | `quimb.Circuit.sample_chaotic`: uniform prior on non-marginal qubits | **biased** when marginal < n | v1 baseline only |
 | `sample_from_circuit` *(in `aics.circuits.exact`)* | cirq full statevector + multinomial | exact | n ≤ 26, used by tests |
 
 At n=24 depth 10, `chaotic(marginal=20)` underestimates XEB by ~0.04 vs `exact_tn`.
@@ -74,6 +87,10 @@ N=24 K=10000 H=256 sbatch slurm/example_e2e_gpu.sb
 ```
 
 Templates only — copy and edit. Job-specific `.sb` files are not committed.
+
+## m9 (Hubbard sample complexity, deprecated)
+
+The `m9` package and its [notebook](archive/m9/notebooks/hubbard_sample_complexity.ipynb) now live under `archive/m9/`. Still installs alongside `aics` for back-compat (`pip install -e .` picks both up). Tests: `pytest archive/m9/tests/`.
 
 ## Branches
 

@@ -22,14 +22,14 @@ def cirq_to_quimb(cirq_circuit, qubits, *, use_mps=False, max_bond=None,
                     cutoff=1e-10, dtype="complex128", to_backend=None):
     """Returns (qcirc, qubits_to_idx). qcirc is qtn.Circuit (exact) or
     qtn.CircuitMPS (truncated)."""
-    n = len(qubits)
+    n_qubits = len(qubits)
     qubits_to_idx = {q: i for i, q in enumerate(qubits)}
     backend_fn = _resolve_to_backend(to_backend, dtype)
     if use_mps:
-        qcirc = qtn.CircuitMPS(N=n, max_bond=max_bond, cutoff=cutoff,
+        qcirc = qtn.CircuitMPS(N=n_qubits, max_bond=max_bond, cutoff=cutoff,
                                  dtype=dtype, to_backend=backend_fn)
     else:
-        qcirc = qtn.Circuit(N=n, psi0_dtype=dtype, dtype=dtype,
+        qcirc = qtn.Circuit(N=n_qubits, psi0_dtype=dtype, dtype=dtype,
                               to_backend=backend_fn)
     for op in cirq_circuit.all_operations():
         U = np.asarray(cirq.unitary(op), dtype=dtype)
@@ -38,10 +38,11 @@ def cirq_to_quimb(cirq_circuit, qubits, *, use_mps=False, max_bond=None,
     return qcirc, qubits_to_idx
 
 
-def _resolve_qcirc(circ_or_qcirc, qubits, **build_kwargs):
-    if isinstance(circ_or_qcirc, (qtn.Circuit, qtn.CircuitMPS)):
-        return circ_or_qcirc
+def _resolve_qcirc(circ, qubits, **build_kwargs):
+    """`circ` is either a cirq.Circuit (then qubits required) or a prebuilt quimb Circuit."""
+    if isinstance(circ, (qtn.Circuit, qtn.CircuitMPS)):
+        return circ
     if qubits is None:
         raise ValueError("pass qubits when circ is a cirq.Circuit")
-    qcirc, _ = cirq_to_quimb(circ_or_qcirc, qubits, **build_kwargs)
+    qcirc, _ = cirq_to_quimb(circ, qubits, **build_kwargs)
     return qcirc

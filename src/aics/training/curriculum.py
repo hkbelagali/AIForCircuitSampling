@@ -5,20 +5,20 @@ from ..eval.z_observables import enumerate_z_supports
 from .z_pauli import train_z_pauli
 
 
-def weight_ascending(model_factory, samples_int, n, *,
+def weight_ascending(model_factory, samples_int, n_qubits, *,
                        w_min=1, w_max=4,
                        n_restarts_cold=4, n_restarts_warm=2,
                        epochs_per_stage=400, lr=2e-3, seed=0,
                        device=None, logger=None, verbose=False):
     """Warm-start across max_weight = w_min..w_max.
 
-    Returns {stage_idx: {w, best_loss, n_restarts, model_state}}; the
-    last stage's model_state is the one to evaluate.
+    Returns {stage_idx: {w, best_loss, n_restarts, model_state}}.
+    The last stage's model_state is the one to evaluate downstream.
     """
     stages = {}
     warm_state = None
     for stage_idx, w in enumerate(range(w_min, w_max + 1)):
-        supports, weights = enumerate_z_supports(n, max_weight=w)
+        supports, weights = enumerate_z_supports(n_qubits, max_weight=w)
         n_restarts = n_restarts_cold if warm_state is None else n_restarts_warm
         best_loss, best_state = float("inf"), None
         for r in range(n_restarts):
@@ -30,7 +30,7 @@ def weight_ascending(model_factory, samples_int, n, *,
             if device is not None:
                 model = model.to(device)
             final = train_z_pauli(
-                model, samples_int, supports, weights, n,
+                model, samples_int, supports, weights, n_qubits,
                 epochs=epochs_per_stage, lr=lr, device=device,
                 verbose=verbose, logger=logger,
                 stage_label=f"z_pauli/w{w}/r{r}",

@@ -12,21 +12,21 @@ import torch
 from ..io.conventions import int_to_bits
 
 
-def enumerate_z_supports(n, max_weight):
+def enumerate_z_supports(n_qubits, max_weight):
     """(supports, weights). Identity (empty support) is index 0."""
     supports = [()]
     weights = [0]
     for w in range(1, max_weight + 1):
-        for S in combinations(range(n), w):
+        for S in combinations(range(n_qubits), w):
             supports.append(S)
             weights.append(w)
     return supports, np.asarray(weights, dtype=np.int64)
 
 
-def parity_matrix(supports, n):
-    """W[i, x] = (-1)^{|x ∩ S_i|} for x ∈ [0, 2^n), MSB-first."""
-    dim = 1 << n
-    all_bits = int_to_bits(np.arange(dim, dtype=np.int64), n)
+def parity_matrix(supports, n_qubits):
+    """W[i, x] = (-1)^{|x ∩ S_i|} for x ∈ [0, 2^n_qubits), MSB-first."""
+    dim = 1 << n_qubits
+    all_bits = int_to_bits(np.arange(dim, dtype=np.int64), n_qubits)
     W = np.ones((len(supports), dim), dtype=np.float64)
     for i, S in enumerate(supports):
         if S:
@@ -35,15 +35,14 @@ def parity_matrix(supports, n):
     return W
 
 
-def empirical_z_expectations(samples_int, supports, n):
-    if len(samples_int) == 0:
+def empirical_z_expectations(samples, supports, n_qubits):
+    """`samples` is either (k,) MSB-first ints or (k, n) bits."""
+    samples = np.asarray(samples)
+    if samples.ndim == 0 or len(samples) == 0:
         return np.zeros(len(supports), dtype=np.float64)
-    return _z_expectations_from_bits(int_to_bits(samples_int, n), supports)
-
-
-def empirical_z_expectations_from_bits(samples_bits, supports):
-    return _z_expectations_from_bits(np.asarray(samples_bits, dtype=np.uint8),
-                                       supports)
+    if samples.ndim == 1:
+        samples = int_to_bits(samples, n_qubits)
+    return _z_expectations_from_bits(samples, supports)
 
 
 def _z_expectations_from_bits(sample_bits, supports):
@@ -57,20 +56,18 @@ def _z_expectations_from_bits(sample_bits, supports):
     return out
 
 
-# Historical name used by m_rcs_nll_eval_cell.py.
-parity_per_support = empirical_z_expectations_from_bits
-
-
 @torch.no_grad()
-def model_z_expectations(model, supports, n, device=None):
-    """<Z_S>_θ via full-distribution forward over 2^n bitstrings. Tractable n ≲ 20."""
+def model_z_expectations(model, supports, n_qubits, device=None):
+    """<Z_S>_θ via full-distribution forward over 2^n_qubits bitstrings.
+
+    Tractable n_qubits ≲ 20."""
     device = device or next(model.parameters()).device
-    dim = 1 << n
+    dim = 1 << n_qubits
     all_int = np.arange(dim, dtype=np.int64)
-    all_bits_t = torch.from_numpy(int_to_bits(all_int, n)).float().to(device)
+    all_bits_t = torch.from_numpy(int_to_bits(all_int, n_qubits)).float().to(device)
     logp = model.log_prob(all_bits_t).to(torch.float64)
     p = torch.softmax(logp, dim=0).cpu().numpy()
-    return parity_matrix(supports, n) @ p
+    return parity_matrix(supports, n_qubits) @ p
 
 
 def per_weight_rms_err(supports, pred, true):

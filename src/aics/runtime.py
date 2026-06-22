@@ -1,4 +1,6 @@
-"""Shared scaffolding: hardware banner, device check, checkpoint I/O, JSON log."""
+"""Cross-cutting runtime helpers used by both sampling and training scripts:
+device selection, hardware banner, checkpoint I/O, JSON logger.
+"""
 import json
 import time
 from pathlib import Path
@@ -22,7 +24,7 @@ def print_hardware(device, dtype=None, extra=None):
 
 
 def assert_device_available(want_gpu, requested_label="--gpu"):
-    """Hard error if --gpu was set but CUDA isn't available. No silent fallback."""
+    """Hard error if --gpu was set but CUDA isn't available. No silent CPU fallback."""
     if want_gpu:
         if not torch.cuda.is_available():
             raise RuntimeError(
@@ -56,7 +58,7 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None,
 
 
 class JsonLogger:
-    """One JSON line per call to .log() — for learning-curve plots."""
+    """One JSON line per call to .log() — for cheap learning-curve plots."""
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)

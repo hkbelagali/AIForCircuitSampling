@@ -29,7 +29,7 @@ def _xeb(samples_bits, pC, n):
 def test_exact_tn_xeb_matches_porter_thomas_at_n8():
     """At n=8 depth 4: sample_exact_tn samples should give XEB ~ 1.0 (Porter-Thomas)."""
     n = 8
-    qubits, circ = make_boixo_v2_rcs_circuit(n, cz_depth=4, seed=0)
+    qubits, circ = make_boixo_v2_rcs_circuit(n, depth=4, seed=0)
     pC = exact_probabilities(circ, qubits)
     samples = sample_exact_tn(circ, qubits, k=4000, seed=0)
     xeb = _xeb(samples, pC, n)
@@ -41,7 +41,7 @@ def test_exact_tn_xeb_matches_porter_thomas_at_n8():
 def test_exact_tn_agrees_with_chaotic_full_marginal_at_n8():
     """At marginal_qubits=n, sample_chaotic = sample_exact_tn (no bias)."""
     n = 8
-    qubits, circ = make_boixo_v2_rcs_circuit(n, cz_depth=4, seed=0)
+    qubits, circ = make_boixo_v2_rcs_circuit(n, depth=4, seed=0)
     pC = exact_probabilities(circ, qubits)
     samples_tn = sample_exact_tn(circ, qubits, k=4000, seed=1)
     samples_ch = sample_chaotic(circ, qubits, k=4000, marginal_qubits=n, seed=1)

@@ -18,12 +18,15 @@ MAX_EPOCHS = 5_000
 LAMBDA_PT = 0.01
 
 
-def train_nll_pt(model, train_bits, total_steps=TOTAL_STEPS,
-                  min_epochs=MIN_EPOCHS, max_epochs=MAX_EPOCHS,
-                  batch_size=BATCH_SIZE, lr=1e-3, lambda_pt=LAMBDA_PT,
-                  n_states=None, device="cpu", verbose=False,
-                  logger=None, clip_grad=1.0):
-    """train_bits (k, n) float, MSB-first. Returns (final_nll, n_epochs)."""
+def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
+               min_epochs=MIN_EPOCHS, max_epochs=MAX_EPOCHS,
+               batch_size=BATCH_SIZE, lr=1e-3, lambda_pt=LAMBDA_PT,
+               n_states=None, device="cpu", verbose=False,
+               logger=None, clip_grad=1.0):
+    """train_bits (k, n_qubits) float, MSB-first. Returns (final_nll, n_epochs).
+
+    lambda_pt = 0 disables the Porter-Thomas regulariser.
+    """
     n_bits = train_bits.shape[1]
     if lambda_pt > 0 and n_states is None:
         n_states = 1 << n_bits
@@ -59,3 +62,7 @@ def train_nll_pt(model, train_bits, total_steps=TOTAL_STEPS,
             logger.log(stage="nll", epoch=ep, n_epochs=n_epochs,
                         avg_nll=last_nll, lambda_pt=lambda_pt)
     return last_nll, n_epochs
+
+
+# Back-compat alias for anything still calling the old name.
+train_nll_pt = train_nll

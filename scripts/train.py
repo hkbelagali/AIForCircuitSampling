@@ -18,17 +18,16 @@ import torch
 
 from aics.io import load_samples, save_result, bits_to_int
 from aics.models import AutoregressiveRNN
-from aics.training import (
-    train_nll_pt, train_z_pauli,
-    BATCH_SIZE, TOTAL_STEPS, MIN_EPOCHS, MAX_EPOCHS, LAMBDA_PT,
+from aics.runtime import (
     print_hardware, assert_device_available,
-    save_checkpoint, load_checkpoint, JsonLogger, SCHEDULES,
+    save_checkpoint, load_checkpoint, JsonLogger,
+)
+from aics.training import (
+    train_nll, train_z_pauli,
+    BATCH_SIZE, TOTAL_STEPS, MIN_EPOCHS, MAX_EPOCHS, LAMBDA_PT, SCHEDULES,
 )
 from aics.training.curriculum import weight_ascending
-from aics.eval import (
-    normalized_xeb, held_nll, normalised_nll, nll_excess,
-    enumerate_z_supports,
-)
+from aics.eval import enumerate_z_supports, report
 
 
 def main():
@@ -76,8 +75,8 @@ def main():
 
     data = load_samples(args.samples_npz)
     meta = data["meta"]
-    n = meta["n"]
-    D = 1 << n
+    n_qubits = meta["n"]   # meta key kept as "n" for back-compat with existing npz files
+    D = 1 << n_qubits
     if args.k_train > len(data["train_bits"]):
         sys.exit(f"--k_train={args.k_train} exceeds k_max={len(data['train_bits'])}")
     train_bits = data["train_bits"][:args.k_train]
@@ -91,7 +90,7 @@ def main():
     logger = JsonLogger(args.log_json) if args.log_json else None
     out = {
         "samples_npz": str(args.samples_npz),
-        "n": n, "depth": meta["depth"], "circuit": meta.get("circuit"),
+        "n": n_qubits, "depth": meta["depth"], "circuit": meta.get("circuit"),
         "circuit_seed": meta["circuit_seed"], "sampler": meta.get("sampler"),
         "k_train": args.k_train, "model_seed": args.model_seed,
         "hidden": args.hidden, "n_layers": args.n_layers,
@@ -101,14 +100,14 @@ def main():
     }
 
     if args.loss == "nll":
-        model = AutoregressiveRNN(n_bits=n, hidden=args.hidden,
+        model = AutoregressiveRNN(n_bits=n_qubits, hidden=args.hidden,
                                     n_layers=args.n_layers).to(device)
         if args.resume:
             payload = load_checkpoint(args.resume, model, map_location=device)
             print(f"[train] resumed from {args.resume}  "
                   f"epoch={payload.get('epoch')}", flush=True)
         lam = args.pt_lambda if args.pt_regularizer else 0.0
-        final_nll, n_epochs = train_nll_pt(
+        final_nll, n_epochs = train_nll(
             model, train_bits.astype(np.float32),
             total_steps=args.total_steps,
             min_epochs=args.min_epochs, max_epochs=args.max_epochs,
@@ -124,10 +123,10 @@ def main():
         if args.curriculum == "weight_ascending":
             def _factory(seed):
                 torch.manual_seed(seed)
-                return AutoregressiveRNN(n_bits=n, hidden=args.hidden,
+                return AutoregressiveRNN(n_bits=n_qubits, hidden=args.hidden,
                                           n_layers=args.n_layers)
             stages = weight_ascending(
-                _factory, samples_int, n,
+                _factory, samples_int, n_qubits,
                 w_min=args.w_min, w_max=args.w_max,
                 n_restarts_cold=args.n_restarts_cold,
                 n_restarts_warm=args.n_restarts_warm,
@@ -136,7 +135,7 @@ def main():
                 device=device, logger=logger, verbose=True,
             )
             last = stages[max(stages)]
-            model = AutoregressiveRNN(n_bits=n, hidden=args.hidden,
+            model = AutoregressiveRNN(n_bits=n_qubits, hidden=args.hidden,
                                         n_layers=args.n_layers).to(device)
             model.load_state_dict(last["model_state"])
             out["curriculum_stages"] = {
@@ -145,35 +144,22 @@ def main():
                 for k, v in stages.items()}
             out["final_loss"] = last["best_loss"]
         else:
-            w_train = args.w_train if args.w_train is not None else n
-            supports, weights = enumerate_z_supports(n, max_weight=w_train)
-            model = AutoregressiveRNN(n_bits=n, hidden=args.hidden,
+            w_train = args.w_train if args.w_train is not None else n_qubits
+            supports, weights = enumerate_z_supports(n_qubits, max_weight=w_train)
+            model = AutoregressiveRNN(n_bits=n_qubits, hidden=args.hidden,
                                         n_layers=args.n_layers).to(device)
             if args.resume:
                 load_checkpoint(args.resume, model, map_location=device)
             out["final_loss"] = train_z_pauli(
-                model, samples_int, supports, weights, n,
+                model, samples_int, supports, weights, n_qubits,
                 epochs=args.epochs_per_stage, lr=args.lr,
                 device=device, verbose=True, logger=logger,
             )
             out["w_train"] = w_train
 
     model.eval()
-    if held_bits is not None:
-        with torch.no_grad():
-            held_t = torch.from_numpy(held_bits.astype(np.float32)).to(device)
-            log_q_held = model.log_prob(held_t).cpu().numpy()
-        out["held_nll"] = held_nll(log_q_held)
-        out["normalised_nll"] = normalised_nll(out["held_nll"], n)
-        if held_pC is not None:
-            out["nll_excess"] = nll_excess(out["held_nll"], held_pC)
-            q_held = np.exp(log_q_held)
-            out["xeb_gen"] = float(D * q_held.mean() - 1)
-            out["xeb_held_cache"] = float(D * held_pC.mean() - 1)
-            if uniform_pC is not None:
-                out["xeb_uniform_cache"] = float(D * uniform_pC.mean() - 1)
-                out["xeb_norm"] = normalized_xeb(
-                    out["xeb_gen"], out["xeb_uniform_cache"], out["xeb_held_cache"])
+    out.update(report(model, held_bits=held_bits, held_pC=held_pC,
+                       uniform_pC=uniform_pC, n_qubits=n_qubits, device=device))
 
     if args.checkpoint:
         save_checkpoint(args.checkpoint, model)
