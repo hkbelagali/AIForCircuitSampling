@@ -5,8 +5,15 @@ import numpy as np
 import pytest
 
 try:
-    from aics.sampling.exact_tn import sample_exact_tn
-    from aics.sampling.chaotic import sample_chaotic
+    from aics.sampling import sample_exact_tn as _sample_exact_tn_raw
+    from aics.sampling import sample_chaotic as _sample_chaotic_raw
+
+    def sample_exact_tn(circ, qubits, k, seed=0):
+        return _sample_exact_tn_raw(circ, qubits, k_samples=k, seed=seed)
+
+    def sample_chaotic(circ, qubits, k, marginal_qubits, seed=0):
+        return _sample_chaotic_raw(circ, qubits, k_samples=k, seed=seed,
+                                     marginal_qubits=marginal_qubits)
 except ImportError:
     # Pre-migration shims
     import tn_rcs
