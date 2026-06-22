@@ -8,9 +8,9 @@ import pytest
 import torch
 
 try:
-    from aics.training.z_pauli import (
-        train_z_pauli, enumerate_z_supports,
-        empirical_z_expectations, model_z_expectations,
+    from aics.training.z_pauli import train_z_pauli
+    from aics.eval.z_observables import (
+        enumerate_z_supports, empirical_z_expectations, model_z_expectations,
     )
     from aics.models.autoregressive_rnn import AutoregressiveRNN
     NEW_API = True
