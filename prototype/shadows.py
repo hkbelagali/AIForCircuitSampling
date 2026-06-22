@@ -312,7 +312,7 @@ def run_shadow_cell(L, k_z, k_random, seed, *,
                     fidelity_threshold=0.99, device="cpu", verbose=False,
                     pauli_max_weight=3, n_restarts=1,
                     selector="val", val_frac=0.1, min_val_shots=50,
-                    record_per_restart=True):
+                    record_per_restart=True, ctx=None):
     """End-to-end training of a sign-augmented AR-RNN on shadow shots.
     Returns a record dict suitable for JSON serialization.
 
@@ -332,7 +332,8 @@ def run_shadow_cell(L, k_z, k_random, seed, *,
     import time
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    ctx = Hubbard(L=L, U=4.0)
+    if ctx is None:
+        ctx = Hubbard(L=L, U=4.0)
     model = SignedARRNN(L=L, n_up=L // 2, n_dn=L // 2,
                         d_hidden=d_hidden).to(device)
     t0 = time.time()
@@ -433,6 +434,93 @@ def run_shadow_cell(L, k_z, k_random, seed, *,
         "n_restarts": n_restarts,
         "selector": selector,
         "restart_records": restart_records,
+        "reached_fidelity_threshold": fid >= fidelity_threshold,
+        "elapsed_sec": elapsed,
+    }
+
+
+def pauli_loss_train(model, ctx, x_bits_t, ops, alpha_t, targets_t,
+                     epochs=2000, lr=1e-3, lr_decay=True, verbose=False,
+                     report_every=200):
+    """End-to-end Adam minimization of
+        L = sum_P alpha_P * ( <P>_theta - <P>_shadow )^2
+    with all Paulis stacked into `ops` (built by pauli_loss.torch_ops).
+    """
+    import pauli_loss
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs,
+                                                       eta_min=lr / 100)
+             if lr_decay else None)
+    for ep in range(epochs):
+        psi = model.psi(x_bits_t).to(torch.float64)
+        psi = psi / (psi.pow(2).sum() + 1e-30).sqrt()
+        exps = pauli_loss.model_expectations(psi, ops)
+        diff = exps - targets_t
+        loss = (alpha_t * diff.pow(2)).sum()
+        opt.zero_grad(); loss.backward(); opt.step()
+        if sched is not None: sched.step()
+        if verbose and (ep % report_every == 0 or ep == epochs - 1):
+            with torch.no_grad():
+                rmse = float(diff.pow(2).mean().sqrt().item())
+            print(f"  ep {ep:>5d}: loss={loss.item():.4g}  "
+                  f"rmse_per_P={rmse:.4f}  "
+                  f"lr={opt.param_groups[0]['lr']:.1e}", flush=True)
+
+
+def run_shadow_cell_pauli(L, k_total, seed, *, w_max, weighting="variance",
+                          epochs=2000, lr=1e-3, d_hidden=32,
+                          fidelity_threshold=0.99, device="cpu",
+                          verbose=False, pauli_max_weight=3, ctx=None):
+    """Train SignedARRNN by minimizing the Pauli-MSE loss
+        L = sum_{|P|<=w_max} alpha_P (<P>_theta - <P>_shadow)^2
+    on k_total random-Pauli shadow shots. Returns a record dict suitable
+    for JSON, matching the shape of run_shadow_cell so plot_shadows.py
+    works unmodified.
+    """
+    import time, pauli_loss
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
+    if ctx is None:
+        ctx = Hubbard(L=L, U=4.0)
+    model = SignedARRNN(L=L, n_up=L // 2, n_dn=L // 2,
+                        d_hidden=d_hidden).to(device)
+    x_bits_t = torch.from_numpy(
+        state_int_to_bits(ctx.states, ctx.L).astype(np.int64)).long().to(device)
+    t0 = time.time()
+    U_r, b_r = sample_shadows_random_pauli(ctx.psi_0, ctx.states, ctx.L,
+                                           k_total, rng)
+    if verbose: print(f"=== building Pauli set (w<={w_max}) ===", flush=True)
+    loss_paulis = pauli_loss.build_loss_paulis(ctx, w_max)
+    if verbose:
+        print(f"  n_paulis={loss_paulis['n_paulis']}, "
+              f"n_triples={len(loss_paulis['I'])}", flush=True)
+    targets = pauli_loss.shadow_targets(loss_paulis, U_r, b_r)
+    alphas = pauli_loss.alpha_array(loss_paulis, weighting)
+    ops = pauli_loss.torch_ops(loss_paulis, device)
+    targets_t = torch.from_numpy(targets).double().to(device)
+    alpha_t = torch.from_numpy(alphas).double().to(device)
+    pauli_loss_train(model, ctx, x_bits_t, ops, alpha_t, targets_t,
+                     epochs=epochs, lr=lr, verbose=verbose)
+    fid, fid_oracle, mag_tv, E = _eval_full(model, ctx, x_bits_t)
+    with torch.no_grad():
+        psi_model = model.psi(x_bits_t).cpu().numpy().astype(np.float64)
+    psi_model = psi_model / (np.linalg.norm(psi_model) or 1.0)
+    pauli_err = (_pauli_err_for_state(psi_model, ctx, pauli_max_weight)
+                 if pauli_max_weight > 0 else {})
+    elapsed = time.time() - t0
+    k_z = 0; k_random = k_total
+    return {
+        "L": L, "k_z": k_z, "k_random": k_random, "seed": seed,
+        "k_total": k_total,
+        "E_0": ctx.E_0, "E_model": E,
+        "rel_err": (E - ctx.E_0) / abs(ctx.E_0),
+        "fidelity": fid, "fid_oracle_signs": fid_oracle,
+        "mag_TV": mag_tv,
+        "pauli_max_err_by_weight": pauli_err,
+        "psi_model": psi_model.tolist(),
+        "epochs": epochs, "lr": lr, "d_hidden": d_hidden,
+        "loss": "pauli", "w_max": w_max, "weighting": weighting,
+        "n_paulis_trained": int(loss_paulis["n_paulis"]),
         "reached_fidelity_threshold": fid >= fidelity_threshold,
         "elapsed_sec": elapsed,
     }
