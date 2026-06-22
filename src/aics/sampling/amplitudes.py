@@ -1,41 +1,20 @@
-"""TN-based amplitude evaluation: p_C(z) = |<z|U|0>|^2 for arbitrary
-bitstrings, computed via quimb's contraction (sharing the same TN as the
-samplers).
-"""
+"""p_C(z) = |<z|U|0>|^2 via quimb amplitude contraction."""
 import numpy as np
 
 from ._quimb_circuit import _resolve_qcirc
 
 
 def amplitudes_tn(circ_or_qcirc, qubits=None, bitstrings=None, *,
-                    optimize="auto-hq", dtype=None, tree=None):
-    """Return |<z|U|0>|^2 for each bitstring z.
-
-    bitstrings: (k, n) uint8 array, MSB-first (qubits[0] = bit 0).
-    tree: cached cotengra path (optional, speeds repeated calls).
-
-    Returns (k,) float64.
-    """
+                    optimize="auto-hq", dtype=None):
+    """(k, n) uint8 bits (MSB-first) → (k,) float64 probabilities."""
     if bitstrings is None:
         raise ValueError("bitstrings is required")
     qcirc = _resolve_qcirc(circ_or_qcirc, qubits)
     bs = np.asarray(bitstrings, dtype=np.uint8)
-    k = len(bs)
-    probs = np.empty(k, dtype=np.float64)
-    opt = tree if tree is not None else optimize
-    for i in range(k):
+    probs = np.empty(len(bs), dtype=np.float64)
+    for i in range(len(bs)):
         s = "".join(str(int(b)) for b in bs[i])
-        amp = qcirc.amplitude(s, optimize=opt, dtype=dtype)
+        amp = qcirc.amplitude(s, optimize=optimize, dtype=dtype)
         amp_val = complex(amp.item()) if hasattr(amp, "item") else complex(amp)
         probs[i] = float(abs(amp_val) ** 2)
     return probs
-
-
-def prepare_amplitude_tree(circ_or_qcirc, qubits=None, *,
-                             optimize="auto-hq"):
-    """Precompute a cotengra contraction tree for repeated `amplitudes_tn`
-    calls. Returns an object you can pass back as `tree=...`.
-    """
-    qcirc = _resolve_qcirc(circ_or_qcirc, qubits)
-    n = qcirc.N
-    return qcirc.amplitude_rehearse("0" * n, optimize=optimize)["tree"]

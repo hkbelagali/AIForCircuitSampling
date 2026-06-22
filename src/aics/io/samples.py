@@ -1,14 +1,13 @@
-"""npz I/O for Stage A sample bundles.
+"""Stage A sample-bundle .npz I/O.
 
-Schema (.npz):
-  train_bits      (k_max, n)         uint8, MSB-first (qubits[0] = MSB)
-  train_pC        (k_max,)           float64, p_C(train_bits[i])
-  held_bits       (k_held, n)        uint8
-  held_pC         (k_held,)          float64
-  uniform_bits    (k_uni, n)         uint8
-  uniform_pC      (k_uni,)           float64
-  meta            json-string        {n, depth, circuit_seed, sample_seed,
-                                       sampler, ..., provenance}
+Schema:
+  train_bits     (k, n) uint8    MSB-first
+  train_pC       (k,)   float64  p_C(train_bits[i])
+  held_bits      (k_h, n) uint8    } chunk 0 only
+  held_pC        (k_h,)   float64  }
+  uniform_bits   (k_u, n) uint8    }
+  uniform_pC     (k_u,)   float64  }
+  meta           json string  + {provenance}
 """
 import json
 from pathlib import Path
@@ -20,11 +19,7 @@ from ._repro import provenance
 
 def save_samples(path, *, train_bits, train_pC,
                   held_bits=None, held_pC=None,
-                  uniform_bits=None, uniform_pC=None,
-                  meta=None):
-    """Write a Stage A sample bundle to `path` (.npz). `meta` is a dict;
-    a provenance stamp (git commit, timestamp, hostname) is auto-added.
-    """
+                  uniform_bits=None, uniform_pC=None, meta=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     meta = dict(meta or {})
@@ -44,9 +39,6 @@ def save_samples(path, *, train_bits, train_pC,
 
 
 def load_samples(path):
-    """Read a Stage A sample bundle. Returns dict with same keys as save_samples
-    (held_*/uniform_* present iff they were saved). `meta` is parsed back to dict.
-    """
     z = np.load(path, allow_pickle=True)
     out = {
         "train_bits": z["train_bits"],
@@ -60,27 +52,18 @@ def load_samples(path):
 
 
 def combine_chunks(chunk_paths, out_path):
-    """Merge chunked Stage A samples into one canonical .npz.
-
-    chunk_paths is a list of files produced with `chunk_idx` 0..K-1.
-    train_bits/train_pC are concatenated; held_* and uniform_* come from
-    chunk 0 only (matching tn_rcs_sample.py's behavior).
-
-    The combined file's meta carries each chunk's provenance under
-    'chunk_provenance' so we don't lose the per-chunk traceback.
-    """
+    """Concatenate train_*; copy held/uniform from chunk 0."""
     chunk_paths = list(chunk_paths)
     if not chunk_paths:
         raise ValueError("no chunks to combine")
     chunks = [load_samples(p) for p in chunk_paths]
-    train_bits = np.concatenate([c["train_bits"] for c in chunks], axis=0)
-    train_pC = np.concatenate([c["train_pC"] for c in chunks], axis=0)
     meta = dict(chunks[0]["meta"])
     meta["chunk_provenance"] = [c["meta"].get("provenance") for c in chunks]
     meta["n_chunks_combined"] = len(chunks)
     save_samples(
         out_path,
-        train_bits=train_bits, train_pC=train_pC,
+        train_bits=np.concatenate([c["train_bits"] for c in chunks], axis=0),
+        train_pC=np.concatenate([c["train_pC"] for c in chunks], axis=0),
         held_bits=chunks[0].get("held_bits"),
         held_pC=chunks[0].get("held_pC"),
         uniform_bits=chunks[0].get("uniform_bits"),

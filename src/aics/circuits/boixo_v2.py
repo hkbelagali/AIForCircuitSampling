@@ -1,24 +1,6 @@
-"""Google-v2 / Boixo-2018 RCS circuit — the canonical circuit family for
-Ryan's RCS-NLL pipeline.
-
-Direct port of cell 9 of `notebooks/rcs_ml_experiment.ipynb`, which sources
-from
-  https://github.com/quantumlib/ReCirq/blob/main/recirq/beyond_classical/google_v2_beyond_classical.py
-i.e. the "Google v2" supremacy benchmark from Boixo et al., Nature Physics
-14, 595 (2018) — arXiv:1608.00263.
-
-NOT the same as the Sycamore-brickwork RCS in `aics.circuits.sycamore`
-(which uses the cirq_google.SYC fSim and the GRID_STAGGERED_PATTERN from
-the 2019 supremacy paper). The two are distinct circuit families:
-
-  - Boixo v2 (this file): CZ + {T, sqrt(X), sqrt(Y)} sandwiched between
-    H-layers. Originally evaluated at depth >= 30 to reach Porter-Thomas;
-    at depth 10 the distribution is chaotic but not maximally PT.
-
-  - Sycamore brickwork: cirq_google.SYC + {sqrt(X), sqrt(Y), sqrt(W)},
-    matches Arute 2019 hardware. Reaches PT faster.
+"""Boixo et al. 2018 ("Google v2") random circuit: CZ + {T, sqrt-X, sqrt-Y}
+sandwiched between H layers. Ported from cell 9 of rcs_ml_experiment.ipynb.
 """
-
 import random
 from typing import Callable, Iterable, Sequence, TypeVar, cast
 
@@ -56,13 +38,10 @@ def _add_cz_layer(layer_index: int, circuit: cirq.Circuit) -> int:
     return layer_index
 
 
-def generate_rcs_circuit(qubits: Iterable[cirq.GridQubit], cz_depth: int,
-                          seed: int) -> cirq.Circuit:
-    """Google v2 RCS circuit (Boixo et al. 2018)."""
+def generate_rcs_circuit(qubits, cz_depth, seed):
     non_diagonal_gates = [cirq.X ** (1 / 2), cirq.Y ** (1 / 2)]
     rand_gen = random.Random(seed).random
     circuit = cirq.Circuit()
-
     circuit.append(cirq.H(q) for q in qubits)
 
     layer_index = 0
@@ -84,23 +63,18 @@ def generate_rcs_circuit(qubits: Iterable[cirq.GridQubit], cz_depth: int,
                                 strategy=cirq.InsertStrategy.EARLIEST,
                             )
                         elif gate != cirq.T:
-                            circuit.append(
-                                cirq.T(q),
-                                strategy=cirq.InsertStrategy.EARLIEST,
-                            )
+                            circuit.append(cirq.T(q),
+                                            strategy=cirq.InsertStrategy.EARLIEST)
 
     circuit.append([cirq.H(q) for q in qubits],
                     strategy=cirq.InsertStrategy.NEW_THEN_INLINE)
     return circuit
 
 
-def grid_dimensions(n_qubits: int):
-    """Smallest n_rows >= 2 dividing n_qubits, else (1, n_qubits). Yields
-    2-row ladders for even n.
+def grid_dimensions(n_qubits):
+    """Smallest n_rows >= 2 dividing n_qubits, else (1, n_qubits).
 
-      n=12 -> (2, 6)    n=24 -> (2, 12)    n=40 -> (2, 20)
-      n=16 -> (2, 8)    n=32 -> (2, 16)    n=48 -> (2, 24)
-      n=20 -> (2, 10)
+    Even n yields a 2-row ladder; n=12 → (2, 6), n=24 → (2, 12), etc.
     """
     for n_rows in range(2, n_qubits + 1):
         if n_qubits % n_rows == 0:
@@ -109,14 +83,8 @@ def grid_dimensions(n_qubits: int):
 
 
 def make_boixo_v2_rcs_circuit(n_qubits, cz_depth=10, seed=42):
-    """Build a Boixo-v2 RCS circuit.
-
-    Returns (qubits, circuit). Same calling convention as
-    `aics.circuits.sycamore.make_sycamore_rcs_circuit` so downstream code
-    can swap families.
-    """
+    """Returns (qubits, circuit). Same shape as `make_sycamore_rcs_circuit`."""
     n_rows, n_cols = grid_dimensions(n_qubits)
     qubits = [cirq.GridQubit(i, j)
               for i in range(n_rows) for j in range(n_cols)]
-    circuit = generate_rcs_circuit(qubits, cz_depth, seed)
-    return qubits, circuit
+    return qubits, generate_rcs_circuit(qubits, cz_depth, seed)

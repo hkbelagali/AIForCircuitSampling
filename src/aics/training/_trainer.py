@@ -1,10 +1,4 @@
-"""Shared scaffolding for the two training loops: checkpoint save/load,
-per-epoch JSON logging, hardware/device print at start.
-
-Both `aics.training.nll.train_nll` and `aics.training.z_pauli.train_z_pauli`
-use this — they share gradient clipping, optimizer/scheduler setup, and
-checkpoint format, only the per-epoch loss computation differs.
-"""
+"""Shared scaffolding: hardware banner, device check, checkpoint I/O, JSON log."""
 import json
 import time
 from pathlib import Path
@@ -13,9 +7,6 @@ import torch
 
 
 def print_hardware(device, dtype=None, extra=None):
-    """Loud single-line hardware banner. Call once at the start of any
-    training-script entry point so SLURM logs make the configuration obvious.
-    """
     line = [f"device={device}"]
     if device.startswith("cuda"):
         i = torch.cuda.current_device()
@@ -30,32 +21,22 @@ def print_hardware(device, dtype=None, extra=None):
     print("[hardware] " + "  ".join(line), flush=True)
 
 
-def assert_device_available(want_gpu: bool, requested_label: str = "--gpu"):
-    """Hard error if `--gpu` was requested but CUDA isn't available.
-    No silent fallback to CPU — the user said determinism over convenience.
-    Returns the device string to use.
-    """
+def assert_device_available(want_gpu, requested_label="--gpu"):
+    """Hard error if --gpu was set but CUDA isn't available. No silent fallback."""
     if want_gpu:
         if not torch.cuda.is_available():
             raise RuntimeError(
-                f"{requested_label} was requested but torch.cuda.is_available() is False. "
-                "Either drop the flag (run on CPU) or move to a GPU node."
-            )
+                f"{requested_label} was requested but torch.cuda.is_available() is False.")
         return "cuda"
     return "cpu"
 
 
 def save_checkpoint(path, model, optimizer=None, scheduler=None,
                       epoch=None, best_loss=None, **extras):
-    """Write a single .pt checkpoint. Always overwrites."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "model_state": model.state_dict(),
-        "epoch": epoch,
-        "best_loss": best_loss,
-        **extras,
-    }
+    payload = {"model_state": model.state_dict(), "epoch": epoch,
+                "best_loss": best_loss, **extras}
     if optimizer is not None:
         payload["optimizer_state"] = optimizer.state_dict()
     if scheduler is not None:
@@ -65,9 +46,6 @@ def save_checkpoint(path, model, optimizer=None, scheduler=None,
 
 def load_checkpoint(path, model, optimizer=None, scheduler=None,
                       map_location="cpu"):
-    """Restore from `save_checkpoint`. Returns the full payload dict so
-    callers can read epoch / best_loss / any custom extras.
-    """
     payload = torch.load(path, map_location=map_location)
     model.load_state_dict(payload["model_state"])
     if optimizer is not None and "optimizer_state" in payload:
@@ -78,12 +56,7 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None,
 
 
 class JsonLogger:
-    """One JSON object per line — `plot.py` reads these for learning curves.
-
-    Each call to `.log(**fields)` appends one row with an auto-added
-    `epoch` and wall-time delta. Open the file in append mode so resume
-    is sane.
-    """
+    """One JSON line per call to .log() — for learning-curve plots."""
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
