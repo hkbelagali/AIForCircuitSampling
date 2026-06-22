@@ -17,7 +17,7 @@ import torch
 
 from .io import load_samples, bits_to_int
 from .models import AutoregressiveRNN
-from .runtime import load_checkpoint, save_checkpoint
+from .runtime import save_checkpoint
 from .training import train_nll, train_z_pauli, LAMBDA_PT, SCHEDULES
 from .training.curriculum import weight_ascending
 from .eval import enumerate_z_supports, report
@@ -31,15 +31,18 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
                 w_train=None, curriculum="none", w_min=1, w_max=4,
                 n_restarts_cold=4, n_restarts_warm=2, epochs_per_stage=400,
                 model_seed=0, device="cpu", logger=None,
-                resume_from=None, save_to=None, verbose=False):
+                resume_from=None, checkpoint_to=None, checkpoint_every=50,
+                save_to=None, verbose=False):
     """One Stage B cell. Returns (result_dict, model).
 
     Same flag rules as scripts/train.py:
       pt_regularizer  default ON for nll, REJECTED for z_pauli
       curriculum      z_pauli only; valid values from SCHEDULES
 
-    resume_from   path to checkpoint to load before training (optional)
-    save_to       path to write final checkpoint (optional)
+    resume_from / checkpoint_to / checkpoint_every are threaded into the
+    appropriate trainer (per-epoch for non-curriculum runs, per-stage for
+    weight_ascending curriculum). save_to writes the final model on top
+    of any periodic checkpoint.
     """
     if loss == "nll" and curriculum != "none":
         raise ValueError("curriculum is only valid with loss='z_pauli'")
@@ -76,8 +79,6 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
     if loss == "nll":
         model = AutoregressiveRNN(n_bits=n_qubits, hidden=hidden,
                                     n_layers=n_layers).to(device)
-        if resume_from:
-            load_checkpoint(resume_from, model, map_location=device)
         lam = pt_lambda if pt_regularizer else 0.0
         final_nll, n_epochs = train_nll(
             model, train_bits.astype(np.float32),
@@ -85,6 +86,8 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
             min_epochs=min_epochs, max_epochs=max_epochs,
             batch_size=batch_size, lr=lr, lambda_pt=lam, n_states=D,
             device=device, verbose=verbose, logger=logger,
+            resume_from=resume_from, checkpoint_to=checkpoint_to,
+            checkpoint_every=checkpoint_every,
         )
         result["final_nll"] = final_nll
         result["n_epochs"] = n_epochs
@@ -103,6 +106,7 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
                 epochs_per_stage=epochs_per_stage,
                 lr=lr, seed=model_seed,
                 device=device, logger=logger, verbose=verbose,
+                resume_from=resume_from, checkpoint_to=checkpoint_to,
             )
             last = stages[max(stages)]
             model = AutoregressiveRNN(n_bits=n_qubits, hidden=hidden,
@@ -118,12 +122,12 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
             supports, weights = enumerate_z_supports(n_qubits, max_weight=w_used)
             model = AutoregressiveRNN(n_bits=n_qubits, hidden=hidden,
                                         n_layers=n_layers).to(device)
-            if resume_from:
-                load_checkpoint(resume_from, model, map_location=device)
             result["final_loss"] = train_z_pauli(
                 model, samples_int, supports, weights, n_qubits,
                 epochs=epochs_per_stage, lr=lr,
                 device=device, verbose=verbose, logger=logger,
+                resume_from=resume_from, checkpoint_to=checkpoint_to,
+                checkpoint_every=checkpoint_every,
             )
             result["w_train"] = w_used
 

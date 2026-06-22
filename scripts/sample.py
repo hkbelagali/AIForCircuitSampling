@@ -19,20 +19,20 @@ from aics.io import save_samples, combine_chunks
 from aics.runtime import print_hardware, assert_device_available
 
 
-def _build_circuit(name, n, depth, seed):
+def _build_circuit(name, n_qubits, depth, seed):
     if name == "boixo_v2":
-        return make_boixo_v2_rcs_circuit(n, depth=depth, seed=seed)
+        return make_boixo_v2_rcs_circuit(n_qubits, depth=depth, seed=seed)
     if name == "sycamore":
-        return make_sycamore_rcs_circuit(n_qubits=n, depth=depth, seed=seed)
+        return make_sycamore_rcs_circuit(n_qubits=n_qubits, depth=depth, seed=seed)
     raise ValueError(f"unknown circuit family: {name!r}")
 
 
-def _chunk_tag(n, depth, cs, ss, chunk_idx, n_chunks, k_per_chunk):
-    return f"n{n}_d{depth}_cs{cs}_ss{ss}_c{chunk_idx}of{n_chunks}_k{k_per_chunk}"
+def _chunk_tag(n_qubits, depth, cs, ss, chunk_idx, n_chunks, k_per_chunk):
+    return f"n{n_qubits}_d{depth}_cs{cs}_ss{ss}_c{chunk_idx}of{n_chunks}_k{k_per_chunk}"
 
 
-def _canonical_tag(n, depth, cs, ss, k_total):
-    return f"n{n}_d{depth}_cs{cs}_ss{ss}_k{k_total}"
+def _canonical_tag(n_qubits, depth, cs, ss, k_total):
+    return f"n{n_qubits}_d{depth}_cs{cs}_ss{ss}_k{k_total}"
 
 
 def _draw(sampler, circ, qubits, k, *, seed, dtype, marginal_qubits=None):

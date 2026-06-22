@@ -1,6 +1,11 @@
 """NLL training of AutoregressiveRNN on bitstring samples.
 
   loss = - mean log q(z)  +  λ · pt_term(log q)    (if λ > 0)
+
+Resume / checkpoint: pass `resume_from` to pick up model + optimizer +
+scheduler + epoch from a prior checkpoint; pass `checkpoint_to` (and
+`checkpoint_every`) to write the same state periodically so a SLURM
+cancel can be recovered cleanly.
 """
 import numpy as np
 import torch
@@ -8,6 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
+from ..runtime import load_checkpoint, save_checkpoint
 from .pt_regularizer import pt_term
 
 # Ryan's defaults (rcs_ml_experiment.ipynb cell 2).
@@ -22,10 +28,15 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
                min_epochs=MIN_EPOCHS, max_epochs=MAX_EPOCHS,
                batch_size=BATCH_SIZE, lr=1e-3, lambda_pt=LAMBDA_PT,
                n_states=None, device="cpu", verbose=False,
-               logger=None, clip_grad=1.0):
+               logger=None, clip_grad=1.0,
+               resume_from=None, checkpoint_to=None, checkpoint_every=50):
     """train_bits (k, n_qubits) float, MSB-first. Returns (final_nll, n_epochs).
 
     lambda_pt = 0 disables the Porter-Thomas regulariser.
+    resume_from: path to a checkpoint produced by save_checkpoint; loads
+                 model, optimizer, scheduler, and resumes at saved epoch.
+    checkpoint_to: path to write the same state every `checkpoint_every`
+                   epochs and at the end.
     """
     n_bits = train_bits.shape[1]
     if lambda_pt > 0 and n_states is None:
@@ -38,9 +49,16 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
-
+    start_epoch = 0
     last_nll = float("nan")
-    for ep in range(n_epochs):
+
+    if resume_from:
+        payload = load_checkpoint(resume_from, model, optimizer, scheduler,
+                                    map_location=device)
+        start_epoch = int(payload.get("epoch") or 0)
+        last_nll = float(payload.get("best_loss") or float("nan"))
+
+    for ep in range(start_epoch, n_epochs):
         model.train()
         ep_loss = 0.0
         for (batch,) in loader:
@@ -61,4 +79,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
         if logger is not None:
             logger.log(stage="nll", epoch=ep, n_epochs=n_epochs,
                         avg_nll=last_nll, lambda_pt=lambda_pt)
+        if checkpoint_to and (ep % checkpoint_every == 0 or ep == n_epochs - 1):
+            save_checkpoint(checkpoint_to, model, optimizer, scheduler,
+                              epoch=ep + 1, best_loss=last_nll)
     return last_nll, n_epochs

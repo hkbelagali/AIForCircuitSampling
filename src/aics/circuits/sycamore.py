@@ -11,8 +11,8 @@ _SUGGESTED_GRIDS = {
 }
 
 
-def grid_for(n):
-    return _SUGGESTED_GRIDS.get(n, (1, n))
+def grid_for(n_qubits):
+    return _SUGGESTED_GRIDS.get(n_qubits, (1, n_qubits))
 
 
 def make_sycamore_rcs_circuit(n_qubits=None, depth=10, seed=42,

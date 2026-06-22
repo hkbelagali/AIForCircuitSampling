@@ -4,18 +4,23 @@
 
 <Z_S>_θ uses a full-distribution forward over 2^n_qubits bitstrings —
 tractable n_qubits ≲ 20.
+
+Resume / checkpoint: same shape as train_nll (resume_from, checkpoint_to,
+checkpoint_every).
 """
 import numpy as np
 import torch
 
 from ..eval.z_observables import empirical_z_expectations, parity_matrix
 from ..io.conventions import int_to_bits
+from ..runtime import load_checkpoint, save_checkpoint
 
 
 def train_z_pauli(model, samples_int, supports, weights, n_qubits, *,
                     alpha=None, epochs=400, lr=2e-3, device=None,
                     verbose=False, log_every=80, logger=None,
-                    stage_label="z_pauli"):
+                    stage_label="z_pauli",
+                    resume_from=None, checkpoint_to=None, checkpoint_every=50):
     """samples_int (k,) MSB-first ints; supports/weights from enumerate_z_supports.
 
     Returns final loss (float).
@@ -35,8 +40,15 @@ def train_z_pauli(model, samples_int, supports, weights, n_qubits, *,
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=epochs, eta_min=lr / 100)
+    start_epoch = 0
     final_loss = float("nan")
-    for ep in range(epochs):
+
+    if resume_from:
+        payload = load_checkpoint(resume_from, model, opt, sched, map_location=device)
+        start_epoch = int(payload.get("epoch") or 0)
+        final_loss = float(payload.get("best_loss") or float("nan"))
+
+    for ep in range(start_epoch, epochs):
         logp = model.log_prob(all_bits_t).to(torch.float64)
         p = torch.softmax(logp, dim=0)
         loss = (alpha_t * (W @ p - targets).pow(2)).sum()
@@ -48,4 +60,7 @@ def train_z_pauli(model, samples_int, supports, weights, n_qubits, *,
             logger.log(stage=stage_label, epoch=ep, n_epochs=epochs,
                         z_pauli_loss=final_loss,
                         max_weight=int(weights.max() if len(weights) > 0 else 0))
+        if checkpoint_to and (ep % checkpoint_every == 0 or ep == epochs - 1):
+            save_checkpoint(checkpoint_to, model, opt, sched,
+                              epoch=ep + 1, best_loss=final_loss)
     return final_loss

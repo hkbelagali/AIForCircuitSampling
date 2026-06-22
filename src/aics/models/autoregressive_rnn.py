@@ -25,12 +25,15 @@ class AutoregressiveRNN(nn.Module):
             logits, x, reduction="none").sum(dim=1)
 
     @torch.no_grad()
-    def sample_bits(self, n):
-        """n bitstrings drawn autoregressively. Returns (n, n_bits) numpy {0,1}."""
+    def sample_bits(self, n_samples):
+        """n_samples bitstrings drawn autoregressively.
+
+        Returns (n_samples, n_bits) numpy float in {0., 1.}.
+        """
         device = next(self.parameters()).device
-        samples = torch.zeros(n, self.n_bits, device=device)
+        samples = torch.zeros(n_samples, self.n_bits, device=device)
         h = None
-        inp = torch.zeros(n, 1, 1, device=device)
+        inp = torch.zeros(n_samples, 1, 1, device=device)
         for i in range(self.n_bits):
             out, h = self.lstm(inp, h)
             prob = torch.sigmoid(self.head(out.squeeze(1)))

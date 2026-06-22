@@ -50,7 +50,13 @@ def main():
     p.add_argument("--gpu", action="store_true",
                     help="shortcut for --device cuda; hard error if no CUDA")
     p.add_argument("--resume", default=None, help="checkpoint to load before training")
-    p.add_argument("--checkpoint", default=None, help="checkpoint to write at end")
+    p.add_argument("--checkpoint", default=None,
+                    help="periodic checkpoint path (per-epoch for nll/z_pauli, "
+                         "per-stage for curriculum). Also the file used for --resume.")
+    p.add_argument("--checkpoint_every", type=int, default=50,
+                    help="write --checkpoint every N epochs (non-curriculum). Default 50.")
+    p.add_argument("--save_to", default=None,
+                    help="path to write final model state (no optimizer/scheduler)")
     p.add_argument("--log_json", default=None, help="per-epoch JSON learning curve")
     p.add_argument("--out", required=True)
     args = p.parse_args()
@@ -74,7 +80,10 @@ def main():
         n_restarts_warm=args.n_restarts_warm,
         epochs_per_stage=args.epochs_per_stage,
         device=device, logger=logger,
-        resume_from=args.resume, save_to=args.checkpoint, verbose=True,
+        resume_from=args.resume,
+        checkpoint_to=args.checkpoint,
+        checkpoint_every=args.checkpoint_every,
+        save_to=args.save_to, verbose=True,
     )
     if logger is not None:
         logger.close()
