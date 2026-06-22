@@ -1,13 +1,16 @@
 [project]
-name = "m9"
-version = "0.1.0"
-description = "Hubbard ground-state sample complexity: AR-RNN + Adam-VMC."
+name = "aics-circuit-sampling"
+version = "0.2.0"
+description = "AI for Circuit Sampling — RCS-NLL learning pipeline (aics) and Hubbard sample-complexity (m9)."
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "scipy",
     "torch",
     "matplotlib",
+    "cirq",
+    "quimb",
+    "pandas",
 ]
 
 [build-system]
@@ -15,5 +18,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["m9*"]
+where = [".", "src"]
+include = ["m9*", "aics*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
