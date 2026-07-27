@@ -84,9 +84,16 @@ def grid_dimensions(n_qubits):
     return 1, n_qubits
 
 
-def make_boixo_v2_rcs_circuit(n_qubits, depth=10, seed=42):
-    """Returns (qubits, circuit). `depth` = number of CZ layers."""
-    n_rows, n_cols = grid_dimensions(n_qubits)
-    qubits = [cirq.GridQubit(i, j)
-              for i in range(n_rows) for j in range(n_cols)]
+def make_boixo_v2_rcs_circuit(n_qubits=None, depth=10, seed=42,
+                                rows=None, cols=None):
+    """Returns (qubits, circuit). `depth` = number of CZ layers.
+
+    Geometry is `(rows, cols)` when either is passed; otherwise falls back
+    to `grid_dimensions(n_qubits)` (the 2-row ladder for even n).
+    """
+    if rows is None or cols is None:
+        if n_qubits is None:
+            raise ValueError("pass n_qubits or both rows and cols")
+        rows, cols = grid_dimensions(n_qubits)
+    qubits = [cirq.GridQubit(i, j) for i in range(rows) for j in range(cols)]
     return qubits, _generate_rcs_circuit(qubits, depth, seed)

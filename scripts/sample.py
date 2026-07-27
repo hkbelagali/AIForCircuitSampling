@@ -19,20 +19,23 @@ from aics.io import save_samples, combine_chunks
 from aics.runtime import print_hardware, assert_device_available
 
 
-def _build_circuit(name, n_qubits, depth, seed):
+def _build_circuit(name, n_qubits, depth, seed, rows=None, cols=None):
     if name == "boixo_v2":
-        return make_boixo_v2_rcs_circuit(n_qubits, depth=depth, seed=seed)
+        return make_boixo_v2_rcs_circuit(n_qubits, depth=depth, seed=seed,
+                                           rows=rows, cols=cols)
     if name == "sycamore":
-        return make_sycamore_rcs_circuit(n_qubits=n_qubits, depth=depth, seed=seed)
+        return make_sycamore_rcs_circuit(n_qubits=n_qubits, depth=depth, seed=seed,
+                                           n_rows=rows, n_cols=cols)
     raise ValueError(f"unknown circuit family: {name!r}")
 
 
-def _chunk_tag(n_qubits, depth, cs, ss, chunk_idx, n_chunks, k_per_chunk):
-    return f"n{n_qubits}_d{depth}_cs{cs}_ss{ss}_c{chunk_idx}of{n_chunks}_k{k_per_chunk}"
+def _chunk_tag(family, rows, cols, depth, cs, ss, chunk_idx, n_chunks, k_per_chunk):
+    return (f"{family}_r{rows}c{cols}_d{depth}_cs{cs}_ss{ss}"
+            f"_c{chunk_idx}of{n_chunks}_k{k_per_chunk}")
 
 
-def _canonical_tag(n_qubits, depth, cs, ss, k_total):
-    return f"n{n_qubits}_d{depth}_cs{cs}_ss{ss}_k{k_total}"
+def _canonical_tag(family, rows, cols, depth, cs, ss, k_total):
+    return f"{family}_r{rows}c{cols}_d{depth}_cs{cs}_ss{ss}_k{k_total}"
 
 
 def _draw(sampler, circ, qubits, k, *, seed, dtype, marginal_qubits=None):
@@ -44,13 +47,33 @@ def _draw(sampler, circ, qubits, k, *, seed, dtype, marginal_qubits=None):
     raise ValueError(f"unknown sampler: {sampler!r}")
 
 
+def _resolve_geometry(args):
+    """Pick (rows, cols) from CLI, or auto-derive from --n."""
+    if args.rows and args.cols:
+        return args.rows, args.cols
+    if args.geometry:
+        r, c = args.geometry.lower().split("x")
+        return int(r), int(c)
+    if args.circuit == "boixo_v2":
+        return grid_dimensions(args.n)
+    # sycamore fallback
+    from aics.circuits import grid_for
+    return grid_for(args.n)
+
+
 def run_chunk(args, k_per_chunk, do_held_uniform):
     sample_seed_eff = args.sample_seed * 100003 + (args.chunk_idx or 0)
-    print(f"[sample] n={args.n} depth={args.depth} family={args.circuit} "
-          f"chunk={args.chunk_idx or 0}/{args.n_chunks} "
+    rows, cols = _resolve_geometry(args)
+    n_qubits = rows * cols
+    if args.n and args.n != n_qubits:
+        print(f"[sample] note: --n {args.n} overridden by geometry {rows}x{cols} = {n_qubits}",
+              flush=True)
+    print(f"[sample] family={args.circuit} rows={rows} cols={cols} "
+          f"(n={n_qubits}) depth={args.depth} chunk={args.chunk_idx or 0}/{args.n_chunks} "
           f"effective_seed={sample_seed_eff}", flush=True)
 
-    qubits, circ = _build_circuit(args.circuit, args.n, args.depth, args.circuit_seed)
+    qubits, circ = _build_circuit(args.circuit, n_qubits, args.depth,
+                                    args.circuit_seed, rows=rows, cols=cols)
 
     t0 = time.time()
     train_bits = _draw(args.sampler, circ, qubits, k_per_chunk,
@@ -58,7 +81,7 @@ def run_chunk(args, k_per_chunk, do_held_uniform):
                         marginal_qubits=args.chaotic_marginal_qubits)
     print(f"  drew {k_per_chunk} train in {time.time() - t0:.1f}s", flush=True)
     train_pC = amplitudes_tn(circ, qubits, train_bits)
-    D = 1 << args.n
+    D = 1 << n_qubits
     print(f"  XEB(train)={D * train_pC.mean() - 1:+.4f}", flush=True)
 
     held_bits = held_pC = uniform_bits = uniform_pC = None
@@ -72,18 +95,20 @@ def run_chunk(args, k_per_chunk, do_held_uniform):
               f"XEB(held)={D * held_pC.mean() - 1:+.4f}", flush=True)
     if do_held_uniform and args.k_uniform > 0:
         rng = np.random.default_rng(sample_seed_eff + 777)
-        uniform_bits = rng.integers(0, 2, size=(args.k_uniform, args.n), dtype=np.uint8)
+        uniform_bits = rng.integers(0, 2, size=(args.k_uniform, n_qubits), dtype=np.uint8)
         uniform_pC = amplitudes_tn(circ, qubits, uniform_bits)
         print(f"  uniform {args.k_uniform} XEB(uniform)={D * uniform_pC.mean() - 1:+.4f}",
               flush=True)
 
-    grid = grid_dimensions(args.n) if args.circuit == "boixo_v2" else (args.n, 1)
     meta = {
-        "n": args.n, "depth": args.depth, "circuit": args.circuit,
+        "n": n_qubits, "family": args.circuit, "rows": rows, "cols": cols,
+        "depth": args.depth,
+        "circuit": args.circuit,   # kept for legacy readers
         "circuit_seed": args.circuit_seed,
         "sample_seed": args.sample_seed,
         "sample_seed_effective": sample_seed_eff,
-        "grid": list(grid), "sampler": args.sampler,
+        "grid": [rows, cols],
+        "sampler": args.sampler,
         "chaotic_marginal_qubits":
             args.chaotic_marginal_qubits if args.sampler == "chaotic" else None,
         "k_max": args.k_max, "k_held": args.k_held, "k_uniform": args.k_uniform,
@@ -92,11 +117,12 @@ def run_chunk(args, k_per_chunk, do_held_uniform):
     }
 
     out_dir = Path(args.out_dir)
-    tag = (_chunk_tag(args.n, args.depth, args.circuit_seed, args.sample_seed,
+    tag = (_chunk_tag(args.circuit, rows, cols, args.depth,
+                       args.circuit_seed, args.sample_seed,
                        args.chunk_idx, args.n_chunks, k_per_chunk)
            if args.n_chunks > 1
-           else _canonical_tag(args.n, args.depth, args.circuit_seed,
-                                args.sample_seed, args.k_max))
+           else _canonical_tag(args.circuit, rows, cols, args.depth,
+                                 args.circuit_seed, args.sample_seed, args.k_max))
     out_path = out_dir / f"{tag}.npz"
     save_samples(out_path, train_bits=train_bits, train_pC=train_pC,
                   held_bits=held_bits, held_pC=held_pC,
@@ -109,9 +135,10 @@ def maybe_combine(args):
     if args.n_chunks <= 1:
         return None
     k_per_chunk = args.k_max // args.n_chunks
+    rows, cols = _resolve_geometry(args)
     out_dir = Path(args.out_dir)
     chunk_paths = [
-        out_dir / f"{_chunk_tag(args.n, args.depth, args.circuit_seed, args.sample_seed, i, args.n_chunks, k_per_chunk)}.npz"
+        out_dir / f"{_chunk_tag(args.circuit, rows, cols, args.depth, args.circuit_seed, args.sample_seed, i, args.n_chunks, k_per_chunk)}.npz"
         for i in range(args.n_chunks)
     ]
     missing = [p for p in chunk_paths if not p.exists()]
@@ -121,7 +148,7 @@ def maybe_combine(args):
         for p in missing:
             print(f"  {p.name}", flush=True)
         return None
-    canonical = out_dir / f"{_canonical_tag(args.n, args.depth, args.circuit_seed, args.sample_seed, args.k_max)}.npz"
+    canonical = out_dir / f"{_canonical_tag(args.circuit, rows, cols, args.depth, args.circuit_seed, args.sample_seed, args.k_max)}.npz"
     combine_chunks(chunk_paths, canonical)
     print(f"[combine] wrote {canonical}  ({args.n_chunks} chunks merged)", flush=True)
     return canonical
@@ -130,7 +157,13 @@ def maybe_combine(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--n", type=int, required=True)
+    p.add_argument("--n", type=int, default=None,
+                    help="qubit count; used if --rows/--cols/--geometry not given")
+    p.add_argument("--rows", type=int, default=None,
+                    help="explicit grid rows (overrides --n's auto-derivation)")
+    p.add_argument("--cols", type=int, default=None)
+    p.add_argument("--geometry", type=str, default=None,
+                    help="shorthand for --rows/--cols, e.g. '4x4' or '5x6'")
     p.add_argument("--depth", type=int, default=10)
     p.add_argument("--circuit", choices=["boixo_v2", "sycamore"], default="boixo_v2")
     p.add_argument("--circuit_seed", type=int, default=42)
