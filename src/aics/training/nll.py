@@ -43,7 +43,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
                n_states=None, device="cpu", verbose=False,
                logger=None, clip_grad=1.0,
                resume_from=None, checkpoint_to=None, checkpoint_every=50):
-    """train_bits (k, n_qubits) float, MSB-first. Returns (final_nll, n_epochs).
+    """train_bits (k, n_qubits) float, MSB-first. Returns (final_nll, n_epochs, trajectory).
 
     lambda_pt = 0 disables the Porter-Thomas regulariser.
     resume_from: path to a checkpoint produced by save_checkpoint; loads
@@ -87,6 +87,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
     start_epoch = 0
     last_nll = float("nan")
+    trajectory = []
 
     use_bf16 = on_cuda and torch.cuda.is_bf16_supported()
     autocast_ctx = (torch.autocast(device_type="cuda", dtype=torch.bfloat16)
@@ -117,6 +118,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
             n_batches += 1
         scheduler.step()
         last_nll = ep_loss / max(1, n_batches)
+        trajectory.append(last_nll)
         if verbose and (ep % 50 == 0 or ep == n_epochs - 1):
             print(f"  ep {ep:>4}/{n_epochs}: NLL = {last_nll:.4f}", flush=True)
         if logger is not None:
@@ -125,4 +127,4 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
         if checkpoint_to and (ep % checkpoint_every == 0 or ep == n_epochs - 1):
             save_checkpoint(checkpoint_to, model, optimizer, scheduler,
                               epoch=ep + 1, best_loss=last_nll)
-    return last_nll, n_epochs
+    return last_nll, n_epochs, trajectory

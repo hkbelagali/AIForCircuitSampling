@@ -80,7 +80,7 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
         model = AutoregressiveRNN(n_bits=n_qubits, hidden=hidden,
                                     n_layers=n_layers).to(device)
         lam = pt_lambda if pt_regularizer else 0.0
-        final_nll, n_epochs = train_nll(
+        final_nll, n_epochs, trajectory = train_nll(
             model, train_bits.astype(np.float32),
             total_steps=total_steps,
             min_epochs=min_epochs, max_epochs=max_epochs,
@@ -91,6 +91,7 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
         )
         result["final_nll"] = final_nll
         result["n_epochs"] = n_epochs
+        result["_nll_trajectory"] = trajectory
     else:  # z_pauli
         samples_int = bits_to_int(train_bits)
         if curriculum == "weight_ascending":
@@ -132,12 +133,15 @@ def train_cell(samples_npz, k_train, *, hidden=128, n_layers=2,
             result["w_train"] = w_used
 
     model.eval()
+    traj = result.pop("_nll_trajectory", None)
     result.update(report(
         model, n_qubits,
         held_bits=data.get("held_bits"),
         held_pC=data.get("held_pC"),
         uniform_pC=data.get("uniform_pC"),
         device=device,
+        nll_trajectory=traj,
+        final_nll=result.get("final_nll"),
     ))
 
     if save_to:

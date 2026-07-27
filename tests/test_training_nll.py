@@ -29,7 +29,7 @@ def test_train_nll_one_epoch_runs(toy_data):
     bits, n = toy_data
     torch.manual_seed(0)
     model = AutoregressiveRNN(n_bits=n, hidden=16, n_layers=1)
-    final_nll, n_epochs = train_nll(
+    final_nll, n_epochs, _ = train_nll(
         model, bits, total_steps=10, min_epochs=1, max_epochs=1,
         batch_size=8, lr=1e-3, lambda_pt=0.0, n_states=1 << n,
         device="cpu", verbose=False,
