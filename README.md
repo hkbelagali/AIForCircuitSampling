@@ -16,13 +16,13 @@ src/aics/
   circuits/       boixo_v2 (default, Ryan's), sycamore, exact (cirq reference)
   sampling/       exact_tn (default, unbiased), chaotic (biased baseline), amplitudes
   models/         AutoregressiveRNN (LSTM, hidden=128)
-  training/       nll (+ optional PT reg), z_pauli (+ optional curriculum)
-  eval/           xeb, nll metrics, z_observables, diversity, entropy, report
+  training/       nll (+ optional PT reg, torch.compile + bf16 + fused Adam on CUDA), z_pauli (+ optional curriculum)
+  eval/           xeb, nll metrics, z_observables, diversity, entropy, diagnostics, report
   io/             bit/qubit conventions, .npz samples, .json results, provenance
   runtime.py      device check, hardware banner, checkpoint I/O, JsonLogger
   cell.py         train_cell() — notebook-friendly Stage B helper
 
-scripts/          sample.py, train.py, plot.py
+scripts/          sample.py, train.py, plot.py, plus experiment-specific scripts
 slurm/            example_e2e_{gpu,cpu}.sb
 notebooks/        rcs_ml_experiment.ipynb
 tests/            aics pytest suite (27 tests)
