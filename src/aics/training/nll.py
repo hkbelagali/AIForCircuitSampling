@@ -8,6 +8,7 @@ scheduler + epoch from a prior checkpoint; pass `checkpoint_to` (and
 cancel can be recovered cleanly.
 """
 import contextlib
+import gc
 
 import numpy as np
 import torch
@@ -71,6 +72,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
     # Compile the forward path (model.log_prob bypasses __call__ via __getattr__,
     # so wrapping the module was a no-op — swap in a compiled forward instead
     # and route the loop through _log_prob_via_forward).
+    original_forward = model.forward
     if on_cuda:
         try:
             model.forward = torch.compile(model.forward, mode="reduce-overhead")
@@ -127,4 +129,10 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
         if checkpoint_to and (ep % checkpoint_every == 0 or ep == n_epochs - 1):
             save_checkpoint(checkpoint_to, model, optimizer, scheduler,
                               epoch=ep + 1, best_loss=last_nll)
+
+    # Undo the CUDA-graphed forward before returning.
+    if on_cuda:
+        model.forward = original_forward
+        gc.collect()
+        torch.cuda.empty_cache()
     return last_nll, n_epochs, trajectory
