@@ -61,7 +61,7 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
         torch.backends.cudnn.benchmark = True
         torch.set_float32_matmul_precision("high")
 
-    # drop_last on CUDA gives torch.compile / CUDA graphs a static batch shape.
+    # drop_last on CUDA gives torch.compile a static batch shape (fewer recompiles).
     loader = DataLoader(
         TensorDataset(torch.from_numpy(train_bits.astype(np.float32))),
         batch_size=min(batch_size, len(train_bits)),
@@ -72,12 +72,17 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
     # Compile the forward path (model.log_prob bypasses __call__ via __getattr__,
     # so wrapping the module was a no-op — swap in a compiled forward instead
     # and route the loop through _log_prob_via_forward).
+    # Deliberately NOT mode="reduce-overhead": that backend uses CUDA graphs,
+    # which capture a static memory pool per input shape and have proven
+    # unstable across a sweep of many short-lived models on this box (both a
+    # memory leak across shapes and a poisoned CUDA context after a crash).
+    # Default mode still gets kernel-fusion speedups without CUDA graphs.
     original_forward = model.forward
     if on_cuda:
         try:
-            model.forward = torch.compile(model.forward, mode="reduce-overhead")
+            model.forward = torch.compile(model.forward)
             if verbose:
-                print("using torch.compile(reduce-overhead)", flush=True)
+                print("using torch.compile(default)", flush=True)
         except Exception as e:
             if verbose:
                 print(f"torch.compile unavailable: {e}", flush=True)
