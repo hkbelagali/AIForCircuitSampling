@@ -60,6 +60,14 @@ def train_nll(model, train_bits, total_steps=TOTAL_STEPS,
     if on_cuda:
         torch.backends.cudnn.benchmark = True
         torch.set_float32_matmul_precision("high")
+        # cuDNN's fused SDPA backend hits CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH
+        # on GH200/ARM nodes when the cluster's loaded cuDNN sub-libraries drift
+        # from the ones PyTorch was built against. Force flash/mem-efficient SDPA
+        # instead, which sidesteps that backend entirely.
+        try:
+            torch.backends.cuda.enable_cudnn_sdp(False)
+        except AttributeError:
+            pass
 
     # drop_last on CUDA gives torch.compile a static batch shape (fewer recompiles).
     loader = DataLoader(
